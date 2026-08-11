@@ -19,6 +19,7 @@ class MainTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp_dir:
             base_dir = Path(temp_dir)
             config_path = base_dir / "config.json"
+            resolved_config_path = config_path.resolve()
             config = SimpleNamespace(
                 log_level="INFO",
                 safe_summary=lambda: "test config",
@@ -39,8 +40,8 @@ class MainTests(unittest.TestCase):
             ):
                 self.assertEqual(main.main(), 0)
 
-            setup_mock.assert_awaited_once_with(config_path)
-            load_mock.assert_called_once_with(config_path)
+            setup_mock.assert_awaited_once_with(resolved_config_path)
+            load_mock.assert_called_once_with(resolved_config_path)
             run_mock.assert_awaited_once_with(config)
 
 
