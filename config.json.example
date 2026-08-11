@@ -6,6 +6,7 @@
     "sessdata": ""
   },
   "osuIrc": {
+    "server": "irc.ppy.sh:6667",
     "username": "",
     "password": "",
     "targetUsername": "",

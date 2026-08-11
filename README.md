@@ -15,7 +15,7 @@
 
 - 通过 osu! API 或官方谱面页获取 Ranked Status、Artist、Title、难度名、BPM、星数和长度。
 - 配置 osu! API 后可查询 Mods 后的真实星数；API 不可用时自动回退网页解析。
-- 通过 Bancho IRC 私聊发送点歌，包含 osu! 谱面链接、Sayobot DL 与 NoVideo 下载链接。
+- 通过 Bancho IRC 私聊发送点歌，包含 osu! 谱面链接，以及 Sayobot 的完整包与无视频包下载链接。
 
 ### Web 队列、tosu 与 OBS
 
@@ -25,15 +25,15 @@
 
 ## 快速开始
 
-1. 解压完整 ZIP。
-2. 双击 `osu-BiliRequest.exe`；也可以使用 `start.bat`。
-3. 如果尚未配置，EXE 会自动打开本地 Web 设置页。
-4. 填写 bilibili 直播间、osu! IRC 账号等信息，点击“保存配置并继续”。
-5. Web 设置页关闭服务后，`start.bat` 会自动继续启动点歌程序，并打开 `http://127.0.0.1:24051/`。
+1. 从 [Releases](https://github.com/hesitation-snow/osu-BiliRequest/releases) 下载 `osu-BiliRequest.exe`，放入一个单独文件夹。程序会在同一文件夹生成配置和日志，请不要在压缩包或系统目录中运行。
+2. 双击 `osu-BiliRequest.exe`。首次运行会自动在浏览器打开 Web 设置向导。
+3. 填写 bilibili 直播间号、osu! Bancho IRC 用户名、IRC 专用密码和游戏内接收者；根据需要配置 bilibili 登录、osu! API、HTTP 代理与 tosu。
+4. 点击“保存配置”。程序会生成 `config.json`、继续启动服务，并在默认浏览器打开 Web 队列页面 `http://127.0.0.1:24051/`。
+5. 保持程序窗口运行。观众发送符合格式的弹幕后，点歌会进入 Web 队列并通过 Bancho IRC 推送；需要 OBS 显示时，再添加页面提供的 Overlay 地址。
 
-已有 `config.json` 时，直接双击 EXE 会正常启动，不会重复打开向导。以后需要修改配置，双击 `configure.bat`，保存后重启正在运行的点歌程序。
+以后直接双击同一个 EXE 即可启动。需要修改设置时，关闭程序后手动编辑 `config.json`；使用本地分发包或源码时，也可以双击 `configure.bat` 重新打开设置向导，保存后再启动程序。
 
-Web 设置页只监听随机分配的 `127.0.0.1` 本机端口，不会直接暴露到局域网或公网。密码和 Secret 不会回显；相应输入框留空会保留已经保存的值。
+设置向导和队列页面仅监听 `127.0.0.1` 本机地址，不会直接暴露到局域网或公网。密码、Cookie 和 Client Secret 不会在页面中回显；敏感输入框留空会保留已经保存的值。请勿公开分享 `config.json`。
 
 ## Web 设置向导
 
@@ -80,10 +80,10 @@ b/5600294 +HDDT
 成功读取谱面信息时：
 
 ```text
-[Miarru] -> [Ranked] [Zektbach - The Sealer 〜ア・ミリアとミリアの民〜 [921206025887's Extra]] (205 BPM, 6.11*, 2:03) [Sayobot DL] [NoVideo]
+[Miarru] -> [Ranked] [Zektbach - The Sealer 〜ア・ミリアとミリアの民〜 [921206025887's Extra]] (205 BPM, 6.11*, 2:03) [Sayobot Full] [Sayobot NoVideo]
 ```
 
-配置 osu! API 后，程序优先通过 API 取得谱面资料与难度，并读取真实 Mod 星数；API 失败时自动回退 osu! 网页解析和 `base 5.79*`。如果两种谱面来源都暂时不可用，仍会发送包含 Beatmap ID 的基础链接，不会丢弃点歌。DT/NC/HT 会调整显示的 BPM 和长度；有 Mods 时显示在参数之后，Sayobot 两个下载链接始终放在整条消息末尾，减少误触。
+配置 osu! API 后，程序优先通过 API 取得谱面资料与难度，并读取真实 Mod 星数；API 失败时自动回退 osu! 网页解析和 `base 5.79*`。如果两种谱面来源都暂时不可用，仍会发送包含 Beatmap ID 的基础链接，不会丢弃点歌。DT/NC/HT 会调整显示的 BPM 和长度；有 Mods 时显示在参数之后。`Sayobot Full` 下载完整包，`Sayobot NoVideo` 下载不含视频的版本。
 
 启动时默认向接收者发送：
 
@@ -135,7 +135,7 @@ Overlay 只有一行：左侧是当前点歌者头像；上方小字显示用户
 
 ## 配置字段说明
 
-通常使用 Web 设置向导即可完成配置；以下字段说明主要用于手动修改 `config.json`。文件允许在开头使用 `//` 单行安全提醒，字段名和字符串必须使用英文双引号。
+通常使用 Web 设置向导即可完成配置；以下字段说明主要用于手动修改 `config.json`。
 
 ### bilibili
 
@@ -144,6 +144,7 @@ Overlay 只有一行：左侧是当前点歌者头像；上方小字显示用户
 
 ### osuIrc
 
+- `server`：IRC 服务器，默认 `irc.ppy.sh:6667`，即 osu! 官方 Bancho IRC。兼容相同登录与私聊协议的私服玩家可改为自己的 `主机名:端口`；当前仅支持非 TLS 的普通 IRC 连接。
 - `username`：发送点歌的 osu! 账号用户名。
 - `password`：osu! IRC 专用密码。
 - `targetUsername`：游戏内接收私聊点歌的用户名。
@@ -212,11 +213,24 @@ tosu 使用独立本机直连，不经过 `network.proxy`。
 
 ### 用户名为什么显示 M***？
 
-bilibili 会限制匿名连接读取他人完整昵称。运行 `configure.bat`，在 Web 设置页使用手机客户端二维码登录，然后保存并重启程序。
+bilibili 会限制匿名连接读取他人完整昵称。关闭程序并运行 `configure.bat`，在设置向导中使用手机客户端二维码登录，然后保存并重新启动程序。
 
 ### 不使用 tosu 可以点歌吗？
 
 可以。关闭 `tosu.enabled` 只会停用当前谱面判断和基于 `play/selectPlay` 的 Overlay 自动同步，不影响弹幕、谱面查询、下载链接和 IRC 转发。
+
+### 无法连接 bilibili、osu! API 或 Bancho IRC 怎么办？
+
+先查看程序窗口或 `logs/bridge.log`，确认失败的是 bilibili、osu! API 还是 Bancho IRC，然后按以下顺序检查：
+
+1. 确认系统时间正确，并检查其它程序能否正常访问对应网站。
+2. 打开 `C:\Windows\System32\drivers\etc\hosts`，删除已经失效或来源不明的 bilibili、`ppy.sh`、`osu.ppy.sh`、`irc.ppy.sh`、`cho.ppy.sh` 固定 IP 记录；修改后运行 `ipconfig /flushdns`。
+3. 在 Windows 防火墙和安全软件中允许 `osu-BiliRequest.exe` 联网。只建议临时关闭防护进行排查，不要长期停用防火墙。
+4. Bancho IRC 使用 TCP 6667 端口。可在 PowerShell 运行 `Test-NetConnection irc.ppy.sh -Port 6667`；`ping` 成功并不代表该端口可以连接。
+5. 检查路由器、校园网、公司网络或运营商是否限制连接。可临时改用手机热点测试，以判断问题来自电脑还是当前网络。
+6. 仍无法直连时，在 Web 设置向导的“HTTP 代理”中填写可用代理，例如 Clash 常用的 `http://127.0.0.1:7890`，保存并重启程序。代理需要支持 HTTPS 和 HTTP CONNECT，才能同时用于 bilibili、osu! API 与 Bancho IRC。
+
+如果配置代理后反而无法连接，请确认代理程序正在运行、端口填写正确，并检查代理软件是否允许本机连接。tosu 使用本机直连，不经过这里的代理。
 
 ### 为什么看到 unknown cmd？
 

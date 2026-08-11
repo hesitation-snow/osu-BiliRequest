@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.0.1 - 2026-08-11
+
+- Add a configurable `osuIrc.server` endpoint with `irc.ppy.sh:6667` as the default and preserve compatibility with existing configurations.
+- Rename the Sayobot links to `Sayobot Full` and `Sayobot NoVideo` for clearer differentiation.
+- Remove the unavailable dashboard settings shortcut while retaining first-run setup and `configure.bat`.
+- Rewrite the quick-start guide and add connection troubleshooting for Hosts overrides, DNS cache, firewalls, TCP port 6667 and HTTP proxies.
+
 ## 1.0.0 - 2026-08-11
 
 - Listen for bilibili live chat beatmap requests and forward them through Bancho IRC.
