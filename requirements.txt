@@ -1,0 +1,6 @@
+aiohttp==3.9.5
+Brotli~=1.1.0
+pure-protobuf~=3.1.2
+yarl~=1.9.11
+qrcode[pil]==8.2
+blivedm @ git+https://github.com/xfgryujk/blivedm.git@8727ca9f8340e9c1e20e473eb1757bffb56c66f6
