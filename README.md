@@ -16,7 +16,6 @@
 - 通过 osu! API 或官方谱面页获取 Ranked Status、Artist、Title、难度名、BPM、星数和长度。
 - 配置 osu! API 后可查询 Mods 后的真实星数；API 不可用时自动回退网页解析。
 - 通过 Bancho IRC 私聊发送点歌，包含 osu! 谱面链接、Sayobot DL 与 NoVideo 下载链接。
-- 已确认不存在的谱面不会发送无效 IRC 链接或进入 Overlay；临时网络故障使用基础链接兜底，避免丢失点歌。
 
 ### Web 队列、tosu 与 OBS
 
@@ -235,10 +234,10 @@ python main.py
 
 `python main.py --setup` 同样打开本地 Web 设置页。
 
-## 第三方组件
+## Third-Party Components
 
-弹幕连接基于 [xfgryujk/blivedm](https://github.com/xfgryujk/blivedm)，固定源码版本 `8727ca9f8340e9c1e20e473eb1757bffb56c66f6`，MIT License。其它组件许可见 `THIRD_PARTY_NOTICES.md` 和 `LICENSES/`。
+Live chat connectivity is based on [xfgryujk/blivedm](https://github.com/xfgryujk/blivedm), pinned to source revision `8727ca9f8340e9c1e20e473eb1757bffb56c66f6` under the MIT License. Notices and license texts for all other third-party components are available in `THIRD_PARTY_NOTICES.md` and `LICENSES/`.
 
-## 许可证
+## License
 
-本项目采用 [MIT License](LICENSE)。可以使用、修改、分发和商业使用，但分发源码或重要部分时必须保留版权声明与许可证文本；软件按“原样”提供，不附带担保。第三方组件继续适用各自许可证。
+This project is licensed under the [MIT License](LICENSE). You may use, modify, distribute, and commercially use the software, provided that the copyright notice and license text are retained in copies or substantial portions. The software is provided “as is,” without warranty. Third-party components remain subject to their respective licenses.
