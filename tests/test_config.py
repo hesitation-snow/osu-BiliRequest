@@ -63,6 +63,9 @@ class ConfigTests(unittest.TestCase):
             config = Config.load(path)
 
         self.assertTrue(config.tosu_enabled)
+        self.assertEqual(config.osu_irc_server, "irc.ppy.sh:6667")
+        self.assertEqual(config.osu_irc_host, "irc.ppy.sh")
+        self.assertEqual(config.osu_irc_port, 6667)
         self.assertFalse(config.use_unicode_irc)
         self.assertTrue(config.use_unicode_web)
         self.assertTrue(config.use_unicode_overlay)
@@ -77,6 +80,29 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(rendered["web"]["overlayHoldSeconds"], 300)
         self.assertEqual(rendered["web"]["overlayPlayedHoldSeconds"], 60)
         self.assertNotIn("_comment", rendered["osuIrc"])
+        self.assertEqual(rendered["osuIrc"]["server"], "irc.ppy.sh:6667")
+
+    def test_loads_custom_irc_server(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            path = Path(temp_dir) / "config.json"
+            path.write_text(
+                json.dumps(
+                    {
+                        "bilibili": {"roomId": 268086},
+                        "osuIrc": {
+                            "server": "irc.example.test:7777",
+                            "username": "sender",
+                            "password": "secret",
+                            "targetUsername": "target",
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+            config = Config.load(path)
+
+        self.assertEqual(config.osu_irc_host, "irc.example.test")
+        self.assertEqual(config.osu_irc_port, 7777)
 
     def test_web_payload_builds_complete_config(self):
         config = build_config_from_payload(

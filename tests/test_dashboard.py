@@ -38,6 +38,7 @@ class DashboardTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("推荐分辨率：760 × 100", html)
         self.assertIn("bili-overlay-height", html)
         self.assertIn("osu-BiliRequest", html)
+        self.assertNotIn('href="/settings"', html)
 
 
 if __name__ == "__main__":

@@ -112,14 +112,14 @@ class ParserTests(unittest.TestCase):
         self.assertTrue(
             text.endswith(
                 "(247.5 BPM, base 5.79*, 3:33) +HDDT "
-                "[https://dl.sayobot.cn/beatmaps/download/full/2533001 Sayobot DL] "
-                "[https://dl.sayobot.cn/beatmaps/download/novideo/2533001 NoVideo]"
+                "[https://dl.sayobot.cn/beatmaps/download/full/2533001 Sayobot Full] "
+                "[https://dl.sayobot.cn/beatmaps/download/novideo/2533001 Sayobot NoVideo]"
             )
         )
 
         api_text = format_irc_request(reference, "viewer", info, 7.1234)
         self.assertIn("(247.5 BPM, 7.12*, 3:33) +HDDT", api_text)
-        self.assertTrue(api_text.endswith("2533001 NoVideo]"))
+        self.assertTrue(api_text.endswith("2533001 Sayobot NoVideo]"))
 
 
 if __name__ == "__main__":
