@@ -2,11 +2,8 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Callable
-from pathlib import Path
 
 from aiohttp import web
-
-from .setup_web import SetupWebServer
 
 
 logger = logging.getLogger(__name__)
@@ -48,10 +45,7 @@ _DASHBOARD_HTML = r"""<!doctype html>
     h1 { margin: 0; font-size: clamp(28px, 5vw, 48px); letter-spacing: -1.5px; }
     h1 span { color: var(--pink); }
     .subtitle, .muted { color: var(--muted); }
-    .header-actions { display: flex; align-items: center; gap: 10px; }
     .badge { display: inline-flex; align-items: center; gap: 8px; border: 1px solid var(--line); border-radius: 999px; padding: 8px 13px; background: #111520cc; }
-    .settings-link { border: 1px solid var(--line); border-radius: 999px; padding: 8px 13px; color: var(--text); text-decoration: none; background: #111520cc; }
-    .settings-link:hover { border-color: var(--pink); color: var(--pink); }
     .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--red); box-shadow: 0 0 14px currentColor; }
     .connected .dot { background: var(--green); }
     .grid { display: grid; grid-template-columns: minmax(0, 2fr) minmax(220px, 1fr); gap: 16px; }
@@ -96,7 +90,7 @@ _DASHBOARD_HTML = r"""<!doctype html>
 <main>
   <header>
     <div><h1><span>osu</span>-BiliRequest</h1><div class="subtitle">tosu live queue dashboard</div></div>
-    <div class="header-actions"><a class="settings-link" href="/settings">设置</a><div id="tosu-badge" class="badge"><i class="dot"></i><span>tosu 连接中</span></div></div>
+    <div id="tosu-badge" class="badge"><i class="dot"></i><span>tosu 连接中</span></div>
   </header>
   <section class="grid">
     <div class="panel">
@@ -476,11 +470,9 @@ class DashboardServer:
         self,
         port: int,
         status_provider: Callable[[], dict],
-        config_path: Path | None = None,
     ) -> None:
         self.port = port
         self.status_provider = status_provider
-        self.settings = SetupWebServer(config_path, listen_port=port) if config_path else None
         self._runner: web.AppRunner | None = None
 
     async def start(self) -> None:
@@ -488,8 +480,6 @@ class DashboardServer:
         app.router.add_get("/", self._index)
         app.router.add_get("/overlay", self._overlay)
         app.router.add_get("/api/status", self._status)
-        if self.settings is not None:
-            self.settings.add_routes(app)
         self._runner = web.AppRunner(app, access_log=None)
         await self._runner.setup()
         site = web.TCPSite(self._runner, "127.0.0.1", self.port)

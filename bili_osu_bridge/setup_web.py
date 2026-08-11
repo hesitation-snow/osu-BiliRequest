@@ -63,6 +63,7 @@ def build_config_from_payload(
         osu_irc_username=str(data.get("ircUsername") or "").strip(),
         osu_irc_password=irc_password,
         osu_target_username=str(data.get("targetUsername") or "").strip(),
+        osu_irc_server=base.osu_irc_server,
         osu_api_enabled=bool(data.get("apiEnabled")),
         osu_api_client_id=int(data.get("apiClientId") or 0),
         osu_api_client_secret=api_secret,

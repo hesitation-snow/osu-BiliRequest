@@ -62,6 +62,28 @@ def _string_tuple(value: object, key: str) -> tuple[str, ...]:
     return tuple(str(item).strip() for item in value if str(item).strip())
 
 
+def _split_irc_server(value: str) -> tuple[str, int]:
+    server = value.strip()
+    if not server or "://" in server:
+        raise ValueError("osuIrc.server 必须使用 主机名 或 主机名:端口 格式")
+    parsed = urlsplit(f"//{server}")
+    try:
+        port = parsed.port or 6667
+    except ValueError as exc:
+        raise ValueError("osuIrc.server 的端口必须在 1 到 65535 之间") from exc
+    if (
+        not parsed.hostname
+        or parsed.username is not None
+        or parsed.password is not None
+        or parsed.path
+        or parsed.query
+        or parsed.fragment
+        or not 1 <= port <= 65535
+    ):
+        raise ValueError("osuIrc.server 必须使用 主机名 或 主机名:端口 格式")
+    return parsed.hostname, port
+
+
 @dataclasses.dataclass(frozen=True)
 class Config:
     bili_room_id: int
@@ -69,6 +91,7 @@ class Config:
     osu_irc_username: str
     osu_irc_password: str
     osu_target_username: str
+    osu_irc_server: str = "irc.ppy.sh:6667"
     osu_api_enabled: bool = False
     osu_api_client_id: int = 0
     osu_api_client_secret: str = ""
@@ -129,6 +152,9 @@ class Config:
                 osu_irc_username=str(osu_irc.get("username", "")).strip(),
                 osu_irc_password=str(osu_irc.get("password", "")).strip(),
                 osu_target_username=str(osu_irc.get("targetUsername", "")).strip(),
+                osu_irc_server=str(
+                    osu_irc.get("server", "irc.ppy.sh:6667")
+                ).strip(),
                 osu_api_enabled=api_enabled,
                 osu_api_client_id=api_client_id,
                 osu_api_client_secret=api_client_secret,
@@ -196,6 +222,7 @@ class Config:
                 "sessdata": self.bili_sessdata,
             },
             "osuIrc": {
+                "server": self.osu_irc_server,
                 "username": self.osu_irc_username,
                 "password": self.osu_irc_password,
                 "targetUsername": self.osu_target_username,
@@ -258,6 +285,7 @@ class Config:
             raise ValueError("冷却时间不能小于 0")
         if self.irc_send_interval_seconds < 0.5:
             raise ValueError("osuIrc.sendIntervalSeconds 不能小于 0.5")
+        _split_irc_server(self.osu_irc_server)
         if self.tosu_enabled and self.tosu_poll_interval_seconds < 0.25:
             raise ValueError("tosu.pollIntervalSeconds 不能小于 0.25")
         tosu_url = urlsplit(self.tosu_url)
@@ -307,6 +335,7 @@ class Config:
             f"bilibili直播间={self.bili_room_id}, "
             f"bilibili登录={'已配置' if self.bili_sessdata else '匿名'}, "
             f"IRC用户={self.osu_irc_username or '未配置'}, "
+            f"IRC服务器={self.osu_irc_server}, "
             f"接收用户={self.osu_target_username or '未配置'}, "
             f"osu!API={'已启用' if self.osu_api_enabled else '已停用' if self.osu_api_client_id else '未配置'}, "
             f"tosu={'已启用' if self.tosu_enabled else '已停用'}, "
@@ -317,3 +346,11 @@ class Config:
             f"Web=http://127.0.0.1:{self.web_port}, "
             f"黑名单={len(self.blacklisted_user_ids) + len(self.blacklisted_usernames)}人"
         )
+
+    @property
+    def osu_irc_host(self) -> str:
+        return _split_irc_server(self.osu_irc_server)[0]
+
+    @property
+    def osu_irc_port(self) -> int:
+        return _split_irc_server(self.osu_irc_server)[1]

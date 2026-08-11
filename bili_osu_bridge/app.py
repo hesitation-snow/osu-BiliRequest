@@ -537,6 +537,8 @@ async def run(config: Config) -> None:
         config.osu_irc_username,
         config.osu_irc_password,
         config.osu_target_username,
+        host=config.osu_irc_host,
+        port=config.osu_irc_port,
         send_interval_seconds=config.irc_send_interval_seconds,
         proxy_url=config.proxy_url,
     )

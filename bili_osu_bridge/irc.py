@@ -56,7 +56,7 @@ class BanchoIrcClient:
         await self.close()
         self._ready = asyncio.Event()
         self._connect_error = None
-        logger.info("正在连接 osu! Bancho IRC：%s:%d", self.host, self.port)
+        logger.info("正在连接 osu! IRC：%s:%d", self.host, self.port)
         self._reader, self._writer = await asyncio.wait_for(
             self._open_connection(), timeout=15
         )
@@ -71,7 +71,7 @@ class BanchoIrcClient:
             error = self._connect_error
             await self.close()
             raise error
-        logger.info("osu! Bancho IRC 已登录")
+        logger.info("osu! IRC 已登录")
 
     async def _open_connection(
         self,

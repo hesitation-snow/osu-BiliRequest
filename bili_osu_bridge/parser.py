@@ -146,8 +146,8 @@ def format_irc_request(
         mirrors = ""
         if info.beatmapset_id > 0:
             mirrors = (
-                f" [https://dl.sayobot.cn/beatmaps/download/full/{info.beatmapset_id} Sayobot DL]"
-                f" [https://dl.sayobot.cn/beatmaps/download/novideo/{info.beatmapset_id} NoVideo]"
+                f" [https://dl.sayobot.cn/beatmaps/download/full/{info.beatmapset_id} Sayobot Full]"
+                f" [https://dl.sayobot.cn/beatmaps/download/novideo/{info.beatmapset_id} Sayobot NoVideo]"
             )
         return (
             f"[{requester}] -> [{info.status}] "
