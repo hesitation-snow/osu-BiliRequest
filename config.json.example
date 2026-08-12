@@ -5,7 +5,15 @@
     "roomId": 0,
     "sessdata": ""
   },
+  "qq": {
+    "enabled": false,
+    "appId": "",
+    "appSecret": "",
+    "allowedGroupOpenids": [],
+    "ownerOpenids": []
+  },
   "osuIrc": {
+    "enabled": true,
     "server": "irc.ppy.sh:6667",
     "username": "",
     "password": "",
@@ -49,7 +57,9 @@
   },
   "blacklist": {
     "userIds": [],
-    "usernames": []
+    "beatmapIds": [
+      "666"
+    ]
   },
   "logLevel": "INFO"
 }

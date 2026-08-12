@@ -4,6 +4,7 @@ import argparse
 import asyncio
 import logging
 import logging.handlers
+import subprocess
 import sys
 import warnings
 from pathlib import Path
@@ -96,13 +97,23 @@ def main() -> int:
         return 0
 
     try:
-        asyncio.run(run(config))
+        restart_requested = asyncio.run(run(config, config_path))
     except KeyboardInterrupt:
         logging.getLogger(__name__).info("用户停止程序")
         return 0
     except Exception:
         logging.getLogger(__name__).exception("程序异常退出")
         return 1
+    if restart_requested:
+        command = [sys.executable]
+        if not getattr(sys, "frozen", False):
+            command.append(str(Path(__file__).resolve()))
+        command.extend(["--config", str(config_path)])
+        try:
+            subprocess.Popen(command, cwd=base_dir)
+        except Exception:
+            logging.getLogger(__name__).exception("无法重新启动程序")
+            return 1
     return 0
 
 
