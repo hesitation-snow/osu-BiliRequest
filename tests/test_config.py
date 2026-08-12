@@ -11,6 +11,13 @@ def setup_payload(**overrides):
     payload = {
         "roomId": 268086,
         "sessdata": "sess-cookie",
+        "qqEnabled": False,
+        "qqAppId": "",
+        "qqAppSecret": "",
+        "qqAllowedGroupOpenids": "",
+        "qqOwnerOpenids": "",
+        "ircEnabled": True,
+        "ircServer": "irc.ppy.sh:6667",
         "ircUsername": "sender",
         "ircPassword": "irc-password",
         "targetUsername": "target",
@@ -35,7 +42,7 @@ def setup_payload(**overrides):
         "queueMaxSize": 50,
         "proxy": "",
         "blacklistedUserIds": "123\n456",
-        "blacklistedUsernames": "BadUser",
+        "blacklistedBeatmapIds": "666\n233",
         "logLevel": "INFO",
     }
     payload.update(overrides)
@@ -63,6 +70,7 @@ class ConfigTests(unittest.TestCase):
             config = Config.load(path)
 
         self.assertTrue(config.tosu_enabled)
+        self.assertTrue(config.osu_irc_enabled)
         self.assertEqual(config.osu_irc_server, "irc.ppy.sh:6667")
         self.assertEqual(config.osu_irc_host, "irc.ppy.sh")
         self.assertEqual(config.osu_irc_port, 6667)
@@ -81,6 +89,19 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(rendered["web"]["overlayPlayedHoldSeconds"], 60)
         self.assertNotIn("_comment", rendered["osuIrc"])
         self.assertEqual(rendered["osuIrc"]["server"], "irc.ppy.sh:6667")
+
+    def test_irc_can_be_disabled_without_credentials(self):
+        config = build_config_from_payload(
+            setup_payload(
+                ircEnabled=False,
+                ircUsername="",
+                ircPassword="",
+                targetUsername="",
+            )
+        )
+
+        self.assertFalse(config.osu_irc_enabled)
+        self.assertFalse(config.to_json_dict()["osuIrc"]["enabled"])
 
     def test_loads_custom_irc_server(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -110,6 +131,11 @@ class ConfigTests(unittest.TestCase):
                 apiEnabled=True,
                 apiClientId=12345,
                 apiClientSecret="api-secret",
+                qqEnabled=True,
+                qqAppId="123456",
+                qqAppSecret="qq-secret",
+                qqAllowedGroupOpenids="group-a\ngroup-b",
+                qqOwnerOpenids="owner-a\nowner-b",
                 tosuEnabled=False,
                 useUnicodeIrc=True,
                 useUnicodeWeb=False,
@@ -126,7 +152,13 @@ class ConfigTests(unittest.TestCase):
         self.assertTrue(config.use_unicode_overlay)
         self.assertTrue(config.osu_api_enabled)
         self.assertEqual(config.osu_api_client_secret, "api-secret")
+        self.assertTrue(config.qq_enabled)
+        self.assertEqual(config.qq_app_id, "123456")
+        self.assertEqual(config.qq_app_secret, "qq-secret")
+        self.assertEqual(config.qq_allowed_group_openids, ("group-a", "group-b"))
+        self.assertEqual(config.qq_owner_openids, ("owner-a", "owner-b"))
         self.assertEqual(config.blacklisted_user_ids, ("123", "456"))
+        self.assertEqual(config.blacklisted_beatmap_ids, ("666", "233"))
 
     def test_migrates_previous_default_hold_to_300(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -154,7 +186,14 @@ class ConfigTests(unittest.TestCase):
 
     def test_web_payload_preserves_blank_secrets(self):
         current = build_config_from_payload(
-            setup_payload(apiEnabled=True, apiClientId=1, apiClientSecret="old-secret")
+            setup_payload(
+                apiEnabled=True,
+                apiClientId=1,
+                apiClientSecret="old-secret",
+                qqEnabled=True,
+                qqAppId="123",
+                qqAppSecret="old-qq-secret",
+            )
         )
         updated = build_config_from_payload(
             setup_payload(
@@ -163,6 +202,9 @@ class ConfigTests(unittest.TestCase):
                 apiEnabled=True,
                 apiClientId=1,
                 apiClientSecret="",
+                qqEnabled=True,
+                qqAppId="123",
+                qqAppSecret="",
             ),
             current,
         )
@@ -170,6 +212,7 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(updated.bili_sessdata, "sess-cookie")
         self.assertEqual(updated.osu_irc_password, "irc-password")
         self.assertEqual(updated.osu_api_client_secret, "old-secret")
+        self.assertEqual(updated.qq_app_secret, "old-qq-secret")
 
     def test_config_save_has_security_comments(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -193,10 +236,18 @@ class SetupWebTests(unittest.IsolatedAsyncioTestCase):
             html = response.text
 
         self.assertIn("bilibili 直播间", html)
+        self.assertIn("QQ 官方机器人", html)
+        self.assertIn("qqAllowedGroupOpenids", html)
+        self.assertIn("qqOwnerOpenids", html)
+        self.assertIn("/ownerid", html)
+        self.assertIn("QQ群内点歌或使用指令时，需要先 @机器人", html)
+        self.assertIn('class="home-link" href="/"', html)
         self.assertIn("osu-BiliRequest 设置", html)
         self.assertIn("网络代理", html)
-        self.assertIn("osu! Bancho IRC", html)
-        self.assertIn("lazer 无法在游戏内收到自己的 IRC 账号发给自己的消息", html)
+        self.assertIn("osu! IRC 转发", html)
+        self.assertIn("osu!lazer 无法在游戏内收到同一账号通过 IRC 发给自己的消息", html)
+        self.assertIn('id="ircEnabled"', html)
+        self.assertIn('id="ircServer"', html)
         self.assertIn("<h2>osu! API</h2>", html)
         self.assertIn("tosu 状态同步", html)
         self.assertIn("useUnicodeIrc", html)
@@ -204,6 +255,8 @@ class SetupWebTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("useUnicodeOverlay", html)
         self.assertIn("overlayHoldSeconds", html)
         self.assertIn("overlayPlayedHoldSeconds", html)
+        self.assertIn("blacklistedBeatmapIds", html)
+        self.assertNotIn("blacklistedUsernames", html)
         self.assertIn('id="save"', html)
         self.assertIn("保存配置", html)
         self.assertIn("扫码登录", html)

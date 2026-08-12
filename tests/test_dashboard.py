@@ -15,11 +15,17 @@ class DashboardTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("data.overlay.waiting", html)
         self.assertIn("data.overlay.playing", html)
         self.assertIn("item.avatarUrl", html)
+        self.assertIn("item.overlayAvatarUrl", html)
         self.assertIn("item.overlayTitleLabel", html)
         self.assertIn("item.overlayDifficulty", html)
         self.assertIn("item.requester", html)
         self.assertIn("队列 ${remaining} 人", html)
         self.assertIn("waiting-avatar", html)
+        self.assertIn("transition: opacity .55s", html)
+        self.assertIn("classList.add('entering')", html)
+        self.assertIn("classList.add('leaving')", html)
+        self.assertIn("item.durationLabel", html)
+        self.assertIn("item.starsLabel", html)
         self.assertNotIn("后面 ${remaining} 人", html)
         self.assertNotIn("等待 bilibili 观众点歌", html)
         self.assertEqual(response.headers["Cache-Control"], "no-store")
@@ -38,7 +44,9 @@ class DashboardTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("推荐分辨率：760 × 100", html)
         self.assertIn("bili-overlay-height", html)
         self.assertIn("osu-BiliRequest", html)
-        self.assertNotIn('href="/settings"', html)
+        self.assertIn('href="/settings"', html)
+        self.assertIn('id="restart-app"', html)
+        self.assertIn("/api/restart", html)
 
 
 if __name__ == "__main__":

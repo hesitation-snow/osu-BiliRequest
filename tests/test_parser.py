@@ -5,6 +5,7 @@ from bili_osu_bridge.parser import (
     format_irc_request,
     parse_beatmap_id,
     parse_beatmap_reference,
+    parse_osu_beatmap_url,
 )
 
 
@@ -26,6 +27,28 @@ class ParserTests(unittest.TestCase):
         ):
             with self.subTest(value=value):
                 self.assertIsNone(parse_beatmap_id(value))
+
+    def test_parses_official_osu_urls_for_chat_platforms(self):
+        cases = {
+            "https://osu.ppy.sh/b/5600294": ("beatmap", 5600294, ()),
+            "https://osu.ppy.sh/beatmaps/5600294 +HD": (
+                "beatmap", 5600294, ("HD",)
+            ),
+            "https://osu.ppy.sh/s/2533001": ("set", 2533001, ()),
+            "https://osu.ppy.sh/beatmapsets/2533001": ("set", 2533001, ()),
+            "https://osu.ppy.sh/beatmapsets/2533001#osu/5600294 +HDDT": (
+                "beatmap", 5600294, ("HD", "DT")
+            ),
+        }
+        for value, expected in cases.items():
+            with self.subTest(value=value):
+                reference = parse_osu_beatmap_url(value)
+                self.assertEqual((reference.kind, reference.id, reference.mods), expected)
+
+        self.assertIsNone(parse_osu_beatmap_url("https://example.com/b/5600294"))
+        self.assertIsNone(
+            parse_osu_beatmap_url("看看 https://osu.ppy.sh/b/5600294")
+        )
 
     def test_distinguishes_set_and_difficulty_ids(self):
         set_ref = parse_beatmap_reference("点歌 s/2533001")
@@ -63,7 +86,7 @@ class ParserTests(unittest.TestCase):
         text = format_irc_request(123456, "测试\n用户")
         self.assertEqual(
             text,
-            "[https://osu.ppy.sh/b/123456 Beatmap 123456] <- osu-BiliRequest: 测试 用户",
+            "[https://osu.ppy.sh/b/123456 beatmap 123456] <- osu-BiliRequest: 测试 用户",
         )
 
     def test_formats_rich_beatmap_link(self):
@@ -112,14 +135,15 @@ class ParserTests(unittest.TestCase):
         self.assertTrue(
             text.endswith(
                 "(247.5 BPM, base 5.79*, 3:33) +HDDT "
-                "[https://dl.sayobot.cn/beatmaps/download/full/2533001 Sayobot Full] "
-                "[https://dl.sayobot.cn/beatmaps/download/novideo/2533001 Sayobot NoVideo]"
+                "Sayobot:"
+                "[https://dl.sayobot.cn/beatmaps/download/full/2533001 Full]~"
+                "[https://dl.sayobot.cn/beatmaps/download/novideo/2533001 NoVideo]"
             )
         )
 
         api_text = format_irc_request(reference, "viewer", info, 7.1234)
         self.assertIn("(247.5 BPM, 7.12*, 3:33) +HDDT", api_text)
-        self.assertTrue(api_text.endswith("2533001 Sayobot NoVideo]"))
+        self.assertTrue(api_text.endswith("2533001 NoVideo]"))
 
 
 if __name__ == "__main__":
