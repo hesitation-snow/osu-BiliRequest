@@ -33,7 +33,7 @@
 - [创建 osu! OAuth 应用](https://osu.ppy.sh/home/account/edit#oauth)
 - [QQ 开放平台](https://q.qq.com/)
 
-更完整的配置字段、队列规则与故障排查请查看 [项目 Wiki](wiki/Home.md)。
+更完整的配置字段、队列规则与故障排查请查看 [项目 Wiki](https://github.com/hesitation-snow/osu-BiliRequest/wiki)。
 
 ## 点歌格式
 
@@ -84,7 +84,7 @@ b/5600294 +HDDT
 
 ## 连接问题
 
-连接失败时先查看程序窗口或 `logs/bridge.log`，再参考 [连接与故障排查](wiki/Troubleshooting.md)。常见原因包括 Hosts 固定 IP、防火墙、TCP 6667 端口限制和代理配置错误。
+连接失败时先查看程序窗口或 `logs/bridge.log`，再参考 [连接与故障排查](https://github.com/hesitation-snow/osu-BiliRequest/wiki/Troubleshooting)。常见原因包括 Hosts 固定 IP、防火墙、TCP 6667 端口限制和代理配置错误。
 
 ## 源码运行
 
