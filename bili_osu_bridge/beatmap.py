@@ -97,11 +97,11 @@ def parse_beatmapset_html(html: str, beatmap_id: int | None = None) -> BeatmapIn
     if beatmap is None:
         if beatmap_id is None:
             raise BeatmapNotFoundError("osu! 谱面集中没有可用难度")
-        raise BeatmapNotFoundError(f"osu! 页面中没有 Beatmap {beatmap_id}")
+        raise BeatmapNotFoundError(f"osu! 页面中没有 beatmap {beatmap_id}")
 
     selected_id = int(beatmap.get("id", 0))
     if selected_id <= 0:
-        raise ValueError("osu! 谱面数据中缺少 Beatmap ID")
+        raise ValueError("osu! 谱面数据中缺少 beatmap ID")
 
     raw_status = _text(beatmap.get("status") or beatmapset.get("status")).lower()
     return BeatmapInfo(

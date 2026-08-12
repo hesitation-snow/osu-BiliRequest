@@ -56,14 +56,23 @@ def build_config_from_payload(
     api_secret = str(data.get("apiClientSecret") or "").strip()
     if not api_secret:
         api_secret = base.osu_api_client_secret
+    qq_app_secret = str(data.get("qqAppSecret") or "").strip()
+    if not qq_app_secret:
+        qq_app_secret = base.qq_app_secret
 
     config = Config(
         bili_room_id=int(data.get("roomId") or 0),
         bili_sessdata=sessdata,
+        qq_enabled=bool(data.get("qqEnabled")),
+        qq_app_id=str(data.get("qqAppId") or "").strip(),
+        qq_app_secret=qq_app_secret,
+        qq_allowed_group_openids=_strings(data.get("qqAllowedGroupOpenids")),
+        qq_owner_openids=_strings(data.get("qqOwnerOpenids")),
+        osu_irc_enabled=bool(data.get("ircEnabled")),
         osu_irc_username=str(data.get("ircUsername") or "").strip(),
         osu_irc_password=irc_password,
         osu_target_username=str(data.get("targetUsername") or "").strip(),
-        osu_irc_server=base.osu_irc_server,
+        osu_irc_server=str(data.get("ircServer") or "irc.ppy.sh:6667").strip(),
         osu_api_enabled=bool(data.get("apiEnabled")),
         osu_api_client_id=int(data.get("apiClientId") or 0),
         osu_api_client_secret=api_secret,
@@ -91,7 +100,7 @@ def build_config_from_payload(
         send_startup_message=bool(data.get("sendStartupMessage")),
         proxy_url=str(data.get("proxy") or "").strip(),
         blacklisted_user_ids=_strings(data.get("blacklistedUserIds")),
-        blacklisted_usernames=_strings(data.get("blacklistedUsernames")),
+        blacklisted_beatmap_ids=_strings(data.get("blacklistedBeatmapIds")),
         log_level=str(data.get("logLevel") or "INFO").strip().upper(),
     )
     config.validate()
@@ -109,7 +118,7 @@ _SETUP_HTML = r"""<!doctype html>
     * { box-sizing:border-box; }
     body { margin:0; min-height:100vh; color:var(--text); font:14px/1.55 "Segoe UI","Microsoft YaHei",sans-serif; background:radial-gradient(circle at 10% 0,#47213f 0,transparent 30rem),radial-gradient(circle at 100% 15%,#123c58 0,transparent 34rem),var(--bg); }
     main { width:min(980px,calc(100% - 28px)); margin:auto; padding:34px 0 70px; }
-    header { margin-bottom:22px; }
+    header { display:flex; align-items:flex-start; justify-content:space-between; gap:18px; margin-bottom:22px; }
     h1 { margin:0; font-size:clamp(30px,6vw,52px); letter-spacing:-2px; } h1 span { color:var(--pink); }
     .lead,.hint { color:var(--muted); } .lead { font-size:16px; }
     .warning { margin:18px 0; padding:13px 15px; border:1px solid #5d3b46; border-radius:12px; background:#291923d9; color:#ffc8d7; }
@@ -129,19 +138,21 @@ _SETUP_HTML = r"""<!doctype html>
     a { color:var(--blue); }
     button { border:1px solid #4a5570; border-radius:10px; padding:10px 15px; background:#252c3e; color:var(--text); font:inherit; font-weight:800; cursor:pointer; }
     button:hover { border-color:var(--pink); color:#ffc2d5; }
+    .home-link { flex:none; border:1px solid #4a5570; border-radius:10px; padding:9px 14px; background:#252c3e; color:var(--text); text-decoration:none; font-weight:800; }
+    .home-link:hover { border-color:var(--pink); color:#ffc2d5; }
     button.primary { border-color:#fb7299; background:linear-gradient(135deg,#fb7299,#d95787); color:white; font-size:16px; }
     button:disabled { opacity:.55; cursor:wait; }
     .qr-row { display:flex; align-items:center; gap:14px; flex-wrap:wrap; }
     #qr-image { display:none; width:170px; height:170px; border:8px solid white; border-radius:12px; image-rendering:auto; }
     #qr-status.success { color:var(--green); } #qr-status.error,#message.error { color:var(--red); }
-    .api-fields.disabled,.tosu-fields.disabled { opacity:.45; pointer-events:none; }
+    .api-fields.disabled,.tosu-fields.disabled,.irc-fields.disabled { opacity:.45; pointer-events:none; }
     .actions { position:sticky; bottom:10px; display:flex; justify-content:space-between; align-items:center; gap:15px; padding:14px 16px; border:1px solid #3b4358; border-radius:15px; background:#111621f2; box-shadow:0 10px 36px #000a; backdrop-filter:blur(14px); }
     #message { min-height:22px; font-weight:750; }
-    @media(max-width:700px){ .grid{grid-template-columns:1fr}.full{grid-column:auto}.actions{align-items:stretch;flex-direction:column}.actions button{width:100%} }
+    @media(max-width:700px){ header{align-items:stretch;flex-direction:column}.home-link{align-self:flex-start}.grid{grid-template-columns:1fr}.full{grid-column:auto}.actions{align-items:stretch;flex-direction:column}.actions button{width:100%} }
   </style>
 </head>
 <body><main>
-  <header><h1><span>osu</span>-BiliRequest 设置</h1><div class="lead">本地 Web 配置向导 · 所有内容只保存到程序旁的 config.json</div></header>
+  <header><div><h1><span>osu</span>-BiliRequest 设置</h1><div class="lead">本地 Web 配置向导 · 所有内容只保存到程序旁的 config.json</div></div><a class="home-link" href="/">返回主页面</a></header>
   <div class="warning">请勿公开分享 config.json。它包含登录用户名、IRC 密码、Cookie 和 Client Secret。<br>Do not share config.json publicly; it contains login credentials and secrets.</div>
   <form id="form">
     <section><div class="section-head"><div><h2>bilibili 直播间</h2><div class="hint">登录后可读取完整弹幕用户名；匿名连接可能显示 M***。</div></div><span class="tag">01</span></div>
@@ -153,15 +164,28 @@ _SETUP_HTML = r"""<!doctype html>
       </div>
     </section>
 
-    <section><div class="section-head"><div><h2>网络代理</h2><div class="hint">留空表示直连；用于 bilibili、osu! API/网页、弹幕 WebSocket 和 Bancho IRC，不影响 tosu 本机连接。</div></div><span class="tag">02</span></div>
+    <section><div class="section-head"><div><h2>QQ 官方机器人</h2><div class="hint">可选。支持 QQ 群内 @机器人点歌以及机器人私聊点歌；需要先在 <a href="https://q.qq.com/" target="_blank" rel="noreferrer">QQ 开放平台</a>创建机器人。</div></div><span class="tag">QQ</span></div>
+      <label class="switch"><input id="qqEnabled" type="checkbox">启用 QQ 官方机器人点歌</label>
+      <div id="qq-fields" class="grid">
+        <label>AppID<input id="qqAppId" autocomplete="off"></label>
+        <label>AppSecret（留空会保留已有值）<input id="qqAppSecret" type="password" autocomplete="new-password"></label>
+        <label class="full">允许点歌的群 OpenID（每行一个，留空允许机器人所在的全部群）<textarea id="qqAllowedGroupOpenids"></textarea></label>
+        <label class="full">主播 OpenID（每行一个）<textarea id="qqOwnerOpenids" placeholder="在群内 @机器人发送 /ownerid 后复制到这里"></textarea></label>
+        <div class="notice">在 QQ 开放平台添加 list、np、skip、help 指令。QQ群内点歌或使用指令时，需要先 @机器人。</div>
+      </div>
+    </section>
+
+    <section><div class="section-head"><div><h2>网络代理</h2><div class="hint">留空表示直连；用于 bilibili、QQ 官方机器人、osu! API/网页、WebSocket 和已启用的 IRC，不影响 tosu 本机连接。</div></div><span class="tag">02</span></div>
       <div class="grid"><label class="full">HTTP 代理<input id="proxy" placeholder="例如 http://127.0.0.1:7890"></label></div>
     </section>
 
-    <section><div class="section-head"><div><h2>osu! Bancho IRC</h2><div class="hint">点歌转发的必需功能。使用 IRC 专用密码，不是游戏登录密码。<a href="https://osu.ppy.sh/home/account/edit#Legacy_api" target="_blank" rel="noreferrer">获取 IRC 密码</a></div></div><span class="tag">03</span></div>
-      <div class="grid">
-        <div class="notice"><strong>osu!lazer 注意：</strong>lazer 无法在游戏内收到自己的 IRC 账号发给自己的消息。如果使用 lazer，请将“IRC 用户名”和“游戏内接收者用户名”设置为两个不同的 osu! 账号；或者改用 osu!stable 接收。</div>
-        <label>IRC 用户名<input id="ircUsername" required></label>
-        <label>游戏内接收者用户名<input id="targetUsername" required></label>
+    <section><div class="section-head"><div><h2>osu! IRC 转发</h2><div class="hint">可选。开启后把点歌发送到指定 IRC 服务器；默认连接 osu! Bancho IRC。只使用 Web/Overlay 时可以关闭。<a href="https://osu.ppy.sh/home/account/edit#Legacy_api" target="_blank" rel="noreferrer">获取 Bancho IRC 密码</a></div></div><span class="tag">03</span></div>
+      <label class="switch"><input id="ircEnabled" type="checkbox">启用 osu! IRC 点歌转发</label>
+      <div id="irc-fields" class="grid irc-fields">
+        <div class="notice full"><strong>osu!lazer 注意：</strong>osu!lazer 无法在游戏内收到同一账号通过 IRC 发给自己的消息。使用 Bancho IRC 时，请让“IRC 用户名”和“游戏内接收者用户名”使用两个不同的 osu! 账号；也可以使用 osu!stable 接收。</div>
+        <label class="full">IRC 服务器<input id="ircServer" placeholder="irc.ppy.sh:6667"></label>
+        <label>IRC 用户名<input id="ircUsername"></label>
+        <label>游戏内接收者用户名<input id="targetUsername"></label>
         <label>IRC 专用密码（留空会保留已有密码）<input id="ircPassword" type="password" autocomplete="new-password"></label>
         <label>最小发送间隔（秒）<input id="ircSendIntervalSeconds" type="number" min="0.5" step="0.1"></label>
         <label class="switch full"><input id="sendStartupMessage" type="checkbox">启动后向接收者发送连接成功消息</label>
@@ -176,7 +200,7 @@ _SETUP_HTML = r"""<!doctype html>
       </div>
     </section>
 
-    <section><div class="section-head"><div><h2>tosu 状态同步</h2><div class="hint">开启后可判断点歌是否为当前谱面、同步 play/selectPlay 状态，并自动推进 Overlay 队列。关闭不影响弹幕监听和 IRC 点歌。</div></div><span class="tag">05</span></div>
+    <section><div class="section-head"><div><h2>tosu 状态同步</h2><div class="hint">开启后可判断点歌是否为当前谱面、同步 play/selectPlay 状态，并自动推进 Overlay 队列。关闭不影响消息监听和 IRC 点歌。</div></div><span class="tag">05</span></div>
       <label class="switch"><input id="tosuEnabled" type="checkbox">启用 tosu 状态同步</label>
       <div id="tosu-fields" class="grid tosu-fields">
         <label class="full">tosu v2 JSON 地址<input id="tosuUrl"></label>
@@ -198,13 +222,14 @@ _SETUP_HTML = r"""<!doctype html>
 
     <section><div class="section-head"><div><h2>点歌规则</h2><div class="hint">关键词、冷却、去重、黑名单都可以在这里调整。</div></div><span class="tag">07</span></div>
       <div class="grid">
-        <label class="full">弹幕关键词（每行一个）<textarea id="requestKeywords"></textarea></label>
+        <label class="full">点歌关键词（每行一个）<textarea id="requestKeywords"></textarea></label>
         <label>单用户冷却（秒）<input id="userCooldownSeconds" type="number" min="0"></label>
         <label>同谱去重（秒）<input id="mapDedupeSeconds" type="number" min="0"></label>
         <label>内部最大队列<input id="queueMaxSize" type="number" min="1"></label>
         <label>日志等级<select id="logLevel"><option>INFO</option><option>DEBUG</option><option>WARNING</option><option>ERROR</option></select></label>
-        <label>黑名单 UID（每行一个）<textarea id="blacklistedUserIds"></textarea></label>
-        <label>黑名单用户名（每行一个）<textarea id="blacklistedUsernames"></textarea></label>
+        <label>用户 UID / OpenID 黑名单（每行一个）<textarea id="blacklistedUserIds"></textarea></label>
+        <label>谱面数字黑名单（每行一个）<textarea id="blacklistedBeatmapIds"></textarea></label>
+        <div class="notice">谱面数字黑名单会忽略相同数字的纯数字、b/ 和 s/ 请求。默认加入 666，避免把常见聊天语气词误识别为点歌。</div>
       </div>
     </section>
 
@@ -215,12 +240,16 @@ _SETUP_HTML = r"""<!doctype html>
   const byId = id => document.getElementById(id);
   let qrSessdata = '';
   let qrTimer = null;
-  const checkboxIds = ['sendStartupMessage','apiEnabled','tosuEnabled','useUnicodeIrc','useUnicodeWeb','useUnicodeOverlay'];
+  const checkboxIds = ['qqEnabled','ircEnabled','sendStartupMessage','apiEnabled','tosuEnabled','useUnicodeIrc','useUnicodeWeb','useUnicodeOverlay'];
 
   function toggleGroups() {
+    byId('qq-fields').classList.toggle('disabled', !byId('qqEnabled').checked);
+    byId('irc-fields').classList.toggle('disabled', !byId('ircEnabled').checked);
     byId('api-fields').classList.toggle('disabled', !byId('apiEnabled').checked);
     byId('tosu-fields').classList.toggle('disabled', !byId('tosuEnabled').checked);
   }
+  byId('qqEnabled').addEventListener('change', toggleGroups);
+  byId('ircEnabled').addEventListener('change', toggleGroups);
   byId('apiEnabled').addEventListener('change', toggleGroups);
   byId('tosuEnabled').addEventListener('change', toggleGroups);
 
@@ -236,6 +265,7 @@ _SETUP_HTML = r"""<!doctype html>
     if (data.hasSessdata) byId('sessdata').placeholder = '已保存登录；留空保持不变';
     if (data.hasIrcPassword) byId('ircPassword').placeholder = '已保存密码；留空保持不变';
     if (data.hasApiSecret) byId('apiClientSecret').placeholder = '已保存 Secret；留空保持不变';
+    if (data.hasQqAppSecret) byId('qqAppSecret').placeholder = '已保存 AppSecret；留空保持不变';
     toggleGroups();
   }
 
@@ -287,6 +317,10 @@ _SETUP_HTML = r"""<!doctype html>
     const payload = {
       roomId:byId('roomId').value, proxy:byId('proxy').value,
       sessdata:byId('sessdata').value || qrSessdata, clearSessdata:byId('clearSessdata').checked,
+      qqEnabled:byId('qqEnabled').checked, qqAppId:byId('qqAppId').value,
+      qqAppSecret:byId('qqAppSecret').value, qqAllowedGroupOpenids:byId('qqAllowedGroupOpenids').value,
+      qqOwnerOpenids:byId('qqOwnerOpenids').value,
+      ircEnabled:byId('ircEnabled').checked, ircServer:byId('ircServer').value,
       ircUsername:byId('ircUsername').value, targetUsername:byId('targetUsername').value,
       ircPassword:byId('ircPassword').value, ircSendIntervalSeconds:byId('ircSendIntervalSeconds').value,
       sendStartupMessage:byId('sendStartupMessage').checked,
@@ -305,7 +339,7 @@ _SETUP_HTML = r"""<!doctype html>
       userCooldownSeconds:byId('userCooldownSeconds').value,
       mapDedupeSeconds:byId('mapDedupeSeconds').value, queueMaxSize:byId('queueMaxSize').value,
       blacklistedUserIds:byId('blacklistedUserIds').value,
-      blacklistedUsernames:byId('blacklistedUsernames').value, logLevel:byId('logLevel').value
+      blacklistedBeatmapIds:byId('blacklistedBeatmapIds').value, logLevel:byId('logLevel').value
     };
     try {
       const response = await fetch('/settings/api/save', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
@@ -347,6 +381,12 @@ class SetupWebServer:
             "values": {
                 "roomId": config.bili_room_id or "",
                 "proxy": config.proxy_url,
+                "qqEnabled": config.qq_enabled,
+                "qqAppId": config.qq_app_id,
+                "qqAllowedGroupOpenids": "\n".join(config.qq_allowed_group_openids),
+                "qqOwnerOpenids": "\n".join(config.qq_owner_openids),
+                "ircEnabled": config.osu_irc_enabled,
+                "ircServer": config.osu_irc_server,
                 "ircUsername": config.osu_irc_username,
                 "targetUsername": config.osu_target_username,
                 "ircSendIntervalSeconds": config.irc_send_interval_seconds,
@@ -368,12 +408,13 @@ class SetupWebServer:
                 "mapDedupeSeconds": config.map_dedupe_seconds,
                 "queueMaxSize": config.queue_max_size,
                 "blacklistedUserIds": "\n".join(config.blacklisted_user_ids),
-                "blacklistedUsernames": "\n".join(config.blacklisted_usernames),
+                "blacklistedBeatmapIds": "\n".join(config.blacklisted_beatmap_ids),
                 "logLevel": config.log_level,
             },
             "hasSessdata": bool(config.bili_sessdata),
             "hasIrcPassword": bool(config.osu_irc_password),
             "hasApiSecret": bool(config.osu_api_client_secret),
+            "hasQqAppSecret": bool(config.qq_app_secret),
         }
 
     def add_routes(self, app: web.Application, *, include_root: bool = False) -> None:

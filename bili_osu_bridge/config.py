@@ -91,6 +91,12 @@ class Config:
     osu_irc_username: str
     osu_irc_password: str
     osu_target_username: str
+    qq_enabled: bool = False
+    qq_app_id: str = ""
+    qq_app_secret: str = ""
+    qq_allowed_group_openids: tuple[str, ...] = ()
+    qq_owner_openids: tuple[str, ...] = ()
+    osu_irc_enabled: bool = True
     osu_irc_server: str = "irc.ppy.sh:6667"
     osu_api_enabled: bool = False
     osu_api_client_id: int = 0
@@ -113,7 +119,7 @@ class Config:
     send_startup_message: bool = True
     proxy_url: str = ""
     blacklisted_user_ids: tuple[str, ...] = ()
-    blacklisted_usernames: tuple[str, ...] = ()
+    blacklisted_beatmap_ids: tuple[str, ...] = ("666",)
     log_level: str = "INFO"
 
     @classmethod
@@ -127,6 +133,7 @@ class Config:
             raise ValueError("配置文件最外层必须是 JSON 对象")
 
         bilibili = _section(data, "bilibili")
+        qq = _section(data, "qq")
         osu_irc = _section(data, "osuIrc")
         osu_api = _section(data, "osuApi")
         chat = _section(data, "chat")
@@ -149,6 +156,16 @@ class Config:
             config = cls(
                 bili_room_id=int(bilibili.get("roomId", 0)),
                 bili_sessdata=str(bilibili.get("sessdata", "")).strip(),
+                qq_enabled=bool(qq.get("enabled", False)),
+                qq_app_id=str(qq.get("appId", "")).strip(),
+                qq_app_secret=str(qq.get("appSecret", "")).strip(),
+                qq_allowed_group_openids=_string_tuple(
+                    qq.get("allowedGroupOpenids", []), "qq.allowedGroupOpenids"
+                ),
+                qq_owner_openids=_string_tuple(
+                    qq.get("ownerOpenids", []), "qq.ownerOpenids"
+                ),
+                osu_irc_enabled=bool(osu_irc.get("enabled", True)),
                 osu_irc_username=str(osu_irc.get("username", "")).strip(),
                 osu_irc_password=str(osu_irc.get("password", "")).strip(),
                 osu_target_username=str(osu_irc.get("targetUsername", "")).strip(),
@@ -204,8 +221,8 @@ class Config:
                 blacklisted_user_ids=_string_tuple(
                     blacklist.get("userIds", []), "blacklist.userIds"
                 ),
-                blacklisted_usernames=_string_tuple(
-                    blacklist.get("usernames", []), "blacklist.usernames"
+                blacklisted_beatmap_ids=_string_tuple(
+                    blacklist.get("beatmapIds", ["666"]), "blacklist.beatmapIds"
                 ),
                 log_level=str(data.get("logLevel", "INFO")).strip().upper(),
             )
@@ -221,7 +238,15 @@ class Config:
                 "roomId": self.bili_room_id,
                 "sessdata": self.bili_sessdata,
             },
+            "qq": {
+                "enabled": self.qq_enabled,
+                "appId": self.qq_app_id,
+                "appSecret": self.qq_app_secret,
+                "allowedGroupOpenids": list(self.qq_allowed_group_openids),
+                "ownerOpenids": list(self.qq_owner_openids),
+            },
             "osuIrc": {
+                "enabled": self.osu_irc_enabled,
                 "server": self.osu_irc_server,
                 "username": self.osu_irc_username,
                 "password": self.osu_irc_password,
@@ -263,7 +288,7 @@ class Config:
             },
             "blacklist": {
                 "userIds": list(self.blacklisted_user_ids),
-                "usernames": list(self.blacklisted_usernames),
+                "beatmapIds": list(self.blacklisted_beatmap_ids),
             },
             "logLevel": self.log_level,
         }
@@ -283,9 +308,15 @@ class Config:
             raise ValueError("limits.queueMaxSize 必须大于 0")
         if self.user_cooldown_seconds < 0 or self.map_dedupe_seconds < 0:
             raise ValueError("冷却时间不能小于 0")
-        if self.irc_send_interval_seconds < 0.5:
+        if any(
+            not value.isdigit() or int(value) <= 0
+            for value in self.blacklisted_beatmap_ids
+        ):
+            raise ValueError("blacklist.beatmapIds 只能填写大于 0 的纯数字")
+        if self.osu_irc_enabled and self.irc_send_interval_seconds < 0.5:
             raise ValueError("osuIrc.sendIntervalSeconds 不能小于 0.5")
-        _split_irc_server(self.osu_irc_server)
+        if self.osu_irc_enabled:
+            _split_irc_server(self.osu_irc_server)
         if self.tosu_enabled and self.tosu_poll_interval_seconds < 0.25:
             raise ValueError("tosu.pollIntervalSeconds 不能小于 0.25")
         tosu_url = urlsplit(self.tosu_url)
@@ -312,28 +343,35 @@ class Config:
             raise ValueError("osuApi.clientId 和 osuApi.clientSecret 必须同时填写或同时留空")
         if self.osu_api_enabled and not self.osu_api_client_id:
             raise ValueError("启用 osu! API 前必须填写 clientId 和 clientSecret")
+        if self.qq_enabled and not self.qq_app_id:
+            raise ValueError("启用 QQ 官方机器人前必须填写 qq.appId")
+        if self.qq_enabled and not self.qq_app_secret:
+            raise ValueError("启用 QQ 官方机器人前必须填写 qq.appSecret")
         if self.proxy_url:
             proxy = urlsplit(self.proxy_url)
             if proxy.scheme.lower() not in {"http", "https"} or not proxy.hostname:
                 raise ValueError(
                     "network.proxy 必须是 http:// 或 https:// 开头的代理地址"
                 )
-        missing = [
-            key
-            for key, value in (
-                ("osuIrc.username", self.osu_irc_username),
-                ("osuIrc.password", self.osu_irc_password),
-                ("osuIrc.targetUsername", self.osu_target_username),
-            )
-            if not value
-        ]
-        if missing:
-            raise ValueError("osu! IRC 为必需功能，必须填写：" + ", ".join(missing))
+        if self.osu_irc_enabled:
+            missing = [
+                key
+                for key, value in (
+                    ("osuIrc.username", self.osu_irc_username),
+                    ("osuIrc.password", self.osu_irc_password),
+                    ("osuIrc.targetUsername", self.osu_target_username),
+                )
+                if not value
+            ]
+            if missing:
+                raise ValueError("启用 osu! IRC 时必须填写：" + ", ".join(missing))
 
     def safe_summary(self) -> str:
         return (
             f"bilibili直播间={self.bili_room_id}, "
             f"bilibili登录={'已配置' if self.bili_sessdata else '匿名'}, "
+            f"QQ机器人={'已启用' if self.qq_enabled else '已停用'}, "
+            f"IRC={'已启用' if self.osu_irc_enabled else '已停用'}, "
             f"IRC用户={self.osu_irc_username or '未配置'}, "
             f"IRC服务器={self.osu_irc_server}, "
             f"接收用户={self.osu_target_username or '未配置'}, "
@@ -344,7 +382,8 @@ class Config:
             f"Overlay{'Unicode' if self.use_unicode_overlay else '普通'}, "
             f"代理={'已配置' if self.proxy_url else '直连'}, "
             f"Web=http://127.0.0.1:{self.web_port}, "
-            f"黑名单={len(self.blacklisted_user_ids) + len(self.blacklisted_usernames)}人"
+            f"用户黑名单={len(self.blacklisted_user_ids)}人, "
+            f"谱面数字黑名单={len(self.blacklisted_beatmap_ids)}项"
         )
 
     @property

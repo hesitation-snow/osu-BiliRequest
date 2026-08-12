@@ -141,7 +141,7 @@ class OsuApiClient:
 
         beatmap_id = int(beatmap.get("id") or 0)
         if beatmap_id <= 0:
-            raise ValueError("osu! API 返回的谱面缺少 Beatmap ID")
+            raise ValueError("osu! API 返回的谱面缺少 beatmap ID")
         raw_status = str(
             beatmap.get("status") or beatmapset.get("status") or "Unknown"
         )

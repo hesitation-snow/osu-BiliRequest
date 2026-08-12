@@ -4,9 +4,12 @@ import asyncio
 import http.cookies
 import logging
 import random
+import re
 import time
 import webbrowser
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
+from pathlib import Path
 from urllib.parse import urlparse
 
 import aiohttp
@@ -18,9 +21,16 @@ from .dashboard import DashboardServer
 from .beatmap import BeatmapLookup, BeatmapNotFoundError, BeatmapReference
 from .irc import BanchoIrcClient
 from .limiter import RequestLimiter
+from .messages import RequestMessage
 from .network import apply_http_proxy
 from .osu_api import OsuApiClient
-from .parser import format_irc_request, parse_beatmap_reference
+from .parser import (
+    format_duration,
+    format_irc_request,
+    parse_beatmap_reference,
+    parse_osu_beatmap_url,
+)
+from .qq import QQBotClient
 from .tosu import TosuMonitor, TosuSnapshot
 
 
@@ -49,14 +59,18 @@ class SongRequest:
     requester_name: str
     user_key: str
     record_id: int
+    reply: Callable[[str], Awaitable[None]] | None = None
 
 
 @dataclass
 class RequestRecord:
     id: int
     created_at: float
+    source: str
+    user_key: str
     requester_name: str
     avatar_url: str
+    overlay_avatar_url: str
     reference_label: str
     requested_beatmap_id: int
     state: str = "queued"
@@ -65,6 +79,8 @@ class RequestRecord:
     overlay_map_label: str = ""
     overlay_title_label: str = ""
     overlay_difficulty: str = ""
+    duration_label: str = ""
+    stars_label: str = ""
     error: str = ""
     overlay_started_at: float = 0.0
     overlay_matched_at: float = 0.0
@@ -76,28 +92,32 @@ class RequestBridge:
     def __init__(
         self,
         config: Config,
-        sender: BanchoIrcClient,
+        sender: BanchoIrcClient | None,
         beatmaps: BeatmapLookup,
         osu_api: OsuApiClient | None = None,
+        tosu_snapshot_provider: Callable[[], TosuSnapshot] | None = None,
     ) -> None:
         self.config = config
         self.sender = sender
         self.beatmaps = beatmaps
         self.osu_api = osu_api
+        self.tosu_snapshot_provider = tosu_snapshot_provider
         self.queue: asyncio.Queue[SongRequest] = asyncio.Queue(config.queue_max_size)
         self.limiter = RequestLimiter(
             config.user_cooldown_seconds,
             config.map_dedupe_seconds,
         )
         self._blacklisted_ids = set(config.blacklisted_user_ids)
-        self._blacklisted_names = {
-            name.casefold() for name in config.blacklisted_usernames
+        self._qq_owner_ids = set(config.qq_owner_openids)
+        self._blacklisted_beatmap_ids = {
+            str(int(value)) for value in config.blacklisted_beatmap_ids
         }
         self._worker_task: asyncio.Task | None = None
         self._next_record_id = 1
         self._records: list[RequestRecord] = []
         self._overlay_current_id: int | None = None
         self._overlay_playing = False
+        self._reply_tasks: set[asyncio.Task[None]] = set()
 
     def start(self) -> None:
         self._worker_task = asyncio.create_task(self._worker())
@@ -106,61 +126,240 @@ class RequestBridge:
         if self._worker_task is not None:
             self._worker_task.cancel()
             await asyncio.gather(self._worker_task, return_exceptions=True)
-        await self.sender.close()
+        for task in tuple(self._reply_tasks):
+            task.cancel()
+        if self._reply_tasks:
+            await asyncio.gather(*self._reply_tasks, return_exceptions=True)
+        if self.sender is not None:
+            await self.sender.close()
+
+    def _reply(
+        self,
+        callback: Callable[[str], Awaitable[None]] | None,
+        text: str,
+    ) -> None:
+        if callback is None:
+            return
+
+        async def send() -> None:
+            try:
+                await callback(text)
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                logger.warning("QQ 回复发送失败：%s", exc)
+
+        task = asyncio.create_task(send(), name="qq-reply")
+        self._reply_tasks.add(task)
+        task.add_done_callback(self._reply_tasks.discard)
+
+    def _handle_qq_command(self, message: RequestMessage) -> bool:
+        raw = " ".join(message.content.strip().split()).casefold()
+        command = raw.replace("！", "!", 1)
+        if command.startswith("/"):
+            command = "!" + command[1:]
+        skip_match = re.fullmatch(r"!skip(?:\s+([1-9][0-9]{0,2}))?", command)
+        if command not in {"!list", "!np", "!help", "!ownerid"} and skip_match is None:
+            return False
+        if command == "!ownerid":
+            self._reply(
+                message.reply,
+                "你的机器人专属 OpenID：\n"
+                f"{message.user_id}\n\n"
+                "请复制到 Web 设置的“主播 OpenID”。它不是 QQ 号。",
+            )
+            return True
+        if command == "!help":
+            self._reply(
+                message.reply,
+                "点歌\n"
+                "发送 osu! 谱面链接或 beatmap ID\n\n"
+                "指令\n"
+                "/list  查看点歌列表\n"
+                "/np  查看主播正在听的谱面\n"
+                "/skip [序号]  跳过点歌\n"
+                "/help  显示本帮助",
+            )
+            return True
+        if command == "!np":
+            snapshot = (
+                self.tosu_snapshot_provider()
+                if self.tosu_snapshot_provider is not None
+                else TosuSnapshot(enabled=False, error="tosu 未启用")
+            )
+            if not snapshot.enabled:
+                text = "当前未启用 tosu，无法读取主播正在游玩的谱面。"
+            elif not snapshot.connected:
+                text = "tosu 暂未连接，无法读取主播当前谱面。"
+            elif not snapshot.beatmap_id:
+                text = f"主播当前没有加载谱面（状态：{snapshot.state or '未知'}）。"
+            else:
+                artist = (
+                    snapshot.artist_unicode or snapshot.artist
+                    if self.config.use_unicode_web
+                    else snapshot.artist or snapshot.artist_unicode
+                ) or "Unknown Artist"
+                title = (
+                    snapshot.title_unicode or snapshot.title
+                    if self.config.use_unicode_web
+                    else snapshot.title or snapshot.title_unicode
+                ) or "Unknown Title"
+                text = (
+                    f"主播正在听：{artist} - {title}\n"
+                    f"https://osu.ppy.sh/b/{snapshot.beatmap_id}"
+                )
+            self._reply(message.reply, text)
+            return True
+
+        items = self._qq_list_items()
+        if skip_match is not None:
+            position = int(skip_match.group(1) or 1)
+            if position > len(items):
+                self._reply(message.reply, f"序号 {position} 不在当前点歌列表中，请先发送 /list。")
+                return True
+            record = items[position - 1]
+            is_owner = message.user_id in self._qq_owner_ids
+            if record.user_key != message.user_key and not is_owner:
+                self._reply(message.reply, "只能跳过自己提交的点歌；主播可以跳过任意项目。")
+                return True
+            record.overlay_dismissed = True
+            record.state = "skipped"
+            if self._overlay_current_id == record.id:
+                self._clear_overlay_current()
+            self._reply(
+                message.reply,
+                f"已跳过：{record.map_label or record.reference_label}",
+            )
+            logger.info(
+                "群友跳过自己的点歌：用户=%s，谱面=%s",
+                message.username or "群友",
+                record.reference_label,
+            )
+            return True
+
+        if not items:
+            self._reply(message.reply, "当前点歌列表为空。")
+            return True
+        lines = ["当前点歌列表："]
+        for index, record in enumerate(items[:8], 1):
+            label = record.map_label or record.reference_label
+            details = " · ".join(
+                value
+                for value in (
+                    record.duration_label or "时长解析中",
+                    record.stars_label or "星数解析中",
+                )
+                if value
+            )
+            lines.append(f"{index}. {label} · {details} — {record.requester_name}")
+        if len(items) > 8:
+            lines.append(f"还有 {len(items) - 8} 首未显示。")
+        self._reply(message.reply, "\n".join(lines))
+        return True
+
+    def _qq_list_items(self) -> list[RequestRecord]:
+        return sorted(
+            (
+                record
+                for record in self._records
+                if not record.overlay_dismissed
+                and record.state not in {"failed", "skipped"}
+            ),
+            key=lambda record: (record.created_at, record.id),
+        )
 
     def submit(self, message: web_models.DanmakuMessage) -> None:
         if message.dm_type != 0:
             return
+        user_id = str(message.uid or message.uid_crc32 or "")
+        self.submit_message(
+            RequestMessage(
+                source="bilibili",
+                user_id=user_id,
+                username=message.uname or "观众",
+                content=message.msg,
+                avatar_url=message.face or "",
+                scope_id=str(self.config.bili_room_id),
+            )
+        )
+
+    def submit_message(self, message: RequestMessage) -> None:
+        if message.source == "qq" and self._handle_qq_command(message):
+            return
         reference = parse_beatmap_reference(
-            message.msg,
+            message.content,
             self.config.request_keywords,
         )
+        if reference is None and message.source == "qq":
+            reference = parse_osu_beatmap_url(
+                message.content,
+                self.config.request_keywords,
+            )
         if reference is None:
             return
 
-        uid = str(message.uid) if message.uid else ""
-        username = (message.uname or "").strip()
-        if uid in self._blacklisted_ids or username.casefold() in self._blacklisted_names:
+        uid = message.user_id.strip()
+        username = message.username.strip()
+        if uid in self._blacklisted_ids:
             logger.info(
-                "忽略黑名单用户点歌：用户=%s，UID=%s，谱面=%s",
+                "忽略黑名单用户点歌：来源=%s，用户=%s，UID/OpenID=%s，谱面=%s",
+                message.source,
                 username or "匿名",
                 uid or "未知",
                 reference.label,
             )
+            self._reply(message.reply, "你的点歌请求未被接受。")
+            return
+        if str(reference.id) in self._blacklisted_beatmap_ids:
+            logger.info(
+                "忽略谱面数字黑名单：来源=%s，用户=%s，谱面=%s",
+                message.source,
+                username or "匿名",
+                reference.label,
+            )
+            self._reply(message.reply, f"数字 {reference.id} 已被点歌规则屏蔽。")
             return
 
-        user_key = str(message.uid or message.uid_crc32 or username or "anonymous")
+        user_key = message.user_key
         accepted, reason = self.limiter.accept(user_key, reference.key)
         if not accepted:
             logger.info(
-                "忽略点歌：%s，用户=%s，谱面=%s",
+                "忽略点歌：%s，来源=%s，用户=%s，谱面=%s",
                 reason,
-                message.uname or "匿名",
+                message.source,
+                username or "匿名",
                 reference.label,
             )
+            self._reply(message.reply, f"点歌未接受：{reason}。")
             return
 
         record_id = self._next_record_id
         request = SongRequest(
             reference,
-            message.uname or "观众",
+            username or ("群友" if message.source == "qq" else "观众"),
             user_key,
             record_id,
+            message.reply,
         )
         try:
             self.queue.put_nowait(request)
         except asyncio.QueueFull:
             logger.warning("点歌队列已满，忽略谱面 %s", reference.label)
+            self._reply(message.reply, "点歌队列已满，请稍后再试。")
             return
 
         self._next_record_id += 1
         requested_beatmap_id = reference.id if reference.kind == "beatmap" else 0
+        avatar_url = _safe_avatar_url(message.avatar_url)
         self._records.append(
             RequestRecord(
                 id=record_id,
                 created_at=time.time(),
+                source=message.source,
+                user_key=user_key,
                 requester_name=request.requester_name,
-                avatar_url=_safe_avatar_url(message.face),
+                avatar_url=avatar_url,
+                overlay_avatar_url=avatar_url,
                 reference_label=reference.label,
                 requested_beatmap_id=requested_beatmap_id,
                 resolved_beatmap_id=requested_beatmap_id,
@@ -169,7 +368,9 @@ class RequestBridge:
         self._records = self._records[-100:]
 
         logger.info(
-            "收到点歌：用户=%s，谱面=%s，队列=%d",
+            "收到点歌：来源=%s，范围=%s，用户=%s，谱面=%s，队列=%d",
+            message.source,
+            message.scope_id or "-",
             request.requester_name,
             request.reference.label,
             self.queue.qsize(),
@@ -191,8 +392,10 @@ class RequestBridge:
             return {
                 "id": record.id,
                 "createdAt": record.created_at,
+                "source": record.source,
                 "requester": record.requester_name,
                 "avatarUrl": record.avatar_url,
+                "overlayAvatarUrl": record.overlay_avatar_url,
                 "reference": record.reference_label,
                 "state": record.state,
                 "resolvedBeatmapId": record.resolved_beatmap_id,
@@ -200,6 +403,8 @@ class RequestBridge:
                 "overlayMapLabel": record.overlay_map_label,
                 "overlayTitleLabel": record.overlay_title_label,
                 "overlayDifficulty": record.overlay_difficulty,
+                "durationLabel": record.duration_label,
+                "starsLabel": record.stars_label,
                 "currentMatch": match,
                 "error": record.error,
             }
@@ -208,7 +413,8 @@ class RequestBridge:
         overlay_candidates = [
             record
             for record in self._records
-            if not record.overlay_dismissed and record.state != "failed"
+            if not record.overlay_dismissed
+            and record.state not in {"failed", "skipped"}
         ]
         overlay_waiting = sorted(
             (
@@ -356,6 +562,9 @@ class RequestBridge:
         while True:
             request = await self.queue.get()
             record = self._record(request.record_id)
+            if record is not None and record.state == "skipped":
+                self.queue.task_done()
+                continue
             if record is not None:
                 record.state = "processing"
             try:
@@ -364,11 +573,19 @@ class RequestBridge:
                 if self.osu_api is not None and self.osu_api.configured:
                     try:
                         info = await self.osu_api.get_beatmap(request.reference)
-                    except BeatmapNotFoundError as exc:
-                        not_found_reasons.append(str(exc))
+                    except BeatmapNotFoundError:
                         logger.warning(
-                            "osu! API 未找到谱面，改用网页确认：谱面=%s",
+                            "osu! API 已确认谱面不存在：谱面=%s",
                             request.reference.label,
+                        )
+                        if request.reference.kind == "beatmap":
+                            raise InvalidSongRequestError(
+                                f"{request.reference.label} 不存在。"
+                                "如果这是 beatmapset ID，"
+                                f"请使用 s/{request.reference.id}"
+                            )
+                        raise InvalidSongRequestError(
+                            f"{request.reference.label} 不存在或没有可用难度"
                         )
                     except Exception as exc:
                         logger.warning(
@@ -395,7 +612,7 @@ class RequestBridge:
                     if request.reference.kind == "beatmap":
                         message = (
                             f"{request.reference.label} 不存在。"
-                            f"如果这是 Beatmapset ID，请使用 s/{request.reference.id}"
+                            f"如果这是 beatmapset ID，请使用 s/{request.reference.id}"
                         )
                     else:
                         message = (
@@ -435,6 +652,11 @@ class RequestBridge:
                         f"{overlay_artist} - {overlay_title}"
                     )
                     record.overlay_difficulty = info.version
+                    if record.source == "qq" and info.beatmapset_id > 0:
+                        record.overlay_avatar_url = (
+                            "https://assets.ppy.sh/beatmaps/"
+                            f"{info.beatmapset_id}/covers/list.jpg"
+                        )
                 modded_stars = None
                 if (
                     info is not None
@@ -453,6 +675,24 @@ class RequestBridge:
                             request.reference.label,
                             exc,
                         )
+                if record is not None and record.state == "skipped":
+                    logger.info("已跳过点歌，不发送 IRC：谱面=%s", request.reference.label)
+                    continue
+                if record is not None and info is not None:
+                    rate = (
+                        1.5
+                        if {"DT", "NC"} & set(request.reference.mods)
+                        else 0.75
+                        if "HT" in request.reference.mods
+                        else 1.0
+                    )
+                    record.duration_label = format_duration(
+                        round(info.total_length / rate)
+                    )
+                    if request.reference.mods and modded_stars is None:
+                        record.stars_label = f"base {info.stars:.2f}*"
+                    else:
+                        record.stars_label = f"{(modded_stars if modded_stars is not None else info.stars):.2f}*"
                 text = format_irc_request(
                     request.reference,
                     request.requester_name,
@@ -460,7 +700,8 @@ class RequestBridge:
                     modded_stars,
                     self.config.use_unicode_irc,
                 )
-                await self.sender.send_privmsg(text)
+                if self.sender is not None:
+                    await self.sender.send_privmsg(text)
                 if record is not None:
                     record.state = "sent"
                 if request.reference.kind == "set" and info is not None:
@@ -469,17 +710,36 @@ class RequestBridge:
                         request.reference.id,
                         info.beatmap_id,
                     )
-                logger.info("点歌已转发：谱面=%s", request.reference.label)
+                logger.info(
+                    "点歌%s：谱面=%s",
+                    "已转发" if self.sender is not None else "已加入队列（IRC 已停用）",
+                    request.reference.label,
+                )
+                success_label = (
+                    record.map_label
+                    if record is not None and record.map_label
+                    else request.reference.label
+                )
+                self._reply(
+                    request.reply,
+                    (
+                        f"点歌推送成功：{success_label}"
+                        if self.sender is not None
+                        else f"点歌已加入队列：{success_label}"
+                    ),
+                )
             except InvalidSongRequestError as exc:
                 if record is not None:
                     record.state = "failed"
                     record.error = str(exc)
                 logger.warning("无效点歌：用户=%s，原因=%s", request.requester_name, exc)
+                self._reply(request.reply, f"点歌失败：{exc}")
             except Exception as exc:
                 if record is not None:
                     record.state = "failed"
                     record.error = f"{type(exc).__name__}: {exc}".rstrip(": ")
                 logger.exception("转发点歌失败：谱面=%s", request.reference.label)
+                self._reply(request.reply, "点歌转发失败，请稍后再试或联系主播查看日志。")
             finally:
                 self.queue.task_done()
 
@@ -531,24 +791,31 @@ async def _open_dashboard(url: str) -> None:
         logger.warning("无法自动打开 Web 队列页面，请手动访问 %s：%s", url, exc)
 
 
-async def run(config: Config) -> None:
+async def run(config: Config, config_path: Path | None = None) -> bool:
     apply_http_proxy(config.proxy_url)
-    sender = BanchoIrcClient(
-        config.osu_irc_username,
-        config.osu_irc_password,
-        config.osu_target_username,
-        host=config.osu_irc_host,
-        port=config.osu_irc_port,
-        send_interval_seconds=config.irc_send_interval_seconds,
-        proxy_url=config.proxy_url,
+    sender = (
+        BanchoIrcClient(
+            config.osu_irc_username,
+            config.osu_irc_password,
+            config.osu_target_username,
+            host=config.osu_irc_host,
+            port=config.osu_irc_port,
+            send_interval_seconds=config.irc_send_interval_seconds,
+            proxy_url=config.proxy_url,
+        )
+        if config.osu_irc_enabled
+        else None
     )
 
-    await sender.connect()
-    if config.send_startup_message:
-        await sender.send_privmsg(
-            f"[osu-BiliRequest] 连接成功，正在监听直播间 {config.bili_room_id}。"
-        )
-        logger.info("已向 osu! 接收者发送连接成功消息")
+    if sender is not None:
+        await sender.connect()
+        if config.send_startup_message:
+            await sender.send_privmsg(
+                f"[osu-BiliRequest] 连接成功，正在监听直播间 {config.bili_room_id}。"
+            )
+            logger.info("已向 osu! 接收者发送连接成功消息")
+    else:
+        logger.info("osu! IRC 转发已停用；Web、Overlay 和点歌队列仍会运行")
 
     session = _create_session(config.bili_sessdata, config.proxy_url)
     osu_api = OsuApiClient(
@@ -556,28 +823,50 @@ async def run(config: Config) -> None:
         config.osu_api_client_id if config.osu_api_enabled else 0,
         config.osu_api_client_secret if config.osu_api_enabled else "",
     )
-    bridge = RequestBridge(config, sender, BeatmapLookup(session), osu_api)
-    bridge.start()
     tosu = (
         TosuMonitor(config.tosu_url, config.tosu_poll_interval_seconds)
         if config.tosu_enabled
         else None
     )
-    if tosu is not None:
-        await tosu.start()
     disabled_tosu = TosuSnapshot(
         enabled=False,
         connected=False,
         error="tosu 状态同步已在配置中关闭",
     )
+    bridge = RequestBridge(
+        config,
+        sender,
+        BeatmapLookup(session),
+        osu_api,
+        lambda: tosu.snapshot if tosu is not None else disabled_tosu,
+    )
+    bridge.start()
+    qq_client = (
+        QQBotClient(
+            session,
+            config.qq_app_id,
+            config.qq_app_secret,
+            bridge.submit_message,
+            allowed_group_openids=config.qq_allowed_group_openids,
+        )
+        if config.qq_enabled
+        else None
+    )
+    if qq_client is not None:
+        qq_client.start()
+    if tosu is not None:
+        await tosu.start()
     dashboard = DashboardServer(
         config.web_port,
         lambda: bridge.dashboard_payload(
             tosu.snapshot if tosu is not None else disabled_tosu
         ),
+        config_path,
     )
+    dashboard_started = False
     try:
         await dashboard.start()
+        dashboard_started = True
         await _open_dashboard(f"http://127.0.0.1:{config.web_port}/")
     except OSError as exc:
         logger.warning("Web 队列页面启动失败：%s", exc)
@@ -597,12 +886,32 @@ async def run(config: Config) -> None:
             "运行 configure.bat 并填写 SESSDATA 后可读取完整昵称"
         )
     logger.info("开始监听 bilibili直播间 %d", config.bili_room_id)
+    restart_requested = False
     try:
-        await client.join()
+        if dashboard_started:
+            client_task = asyncio.create_task(client.join(), name="bilibili-client")
+            restart_task = asyncio.create_task(
+                dashboard.wait_for_restart(), name="web-restart"
+            )
+            done, pending = await asyncio.wait(
+                {client_task, restart_task},
+                return_when=asyncio.FIRST_COMPLETED,
+            )
+            restart_requested = restart_task in done
+            for task in pending:
+                task.cancel()
+            await asyncio.gather(*pending, return_exceptions=True)
+            if client_task in done:
+                await client_task
+        else:
+            await client.join()
     finally:
         await client.stop_and_close()
         await dashboard.close()
         if tosu is not None:
             await tosu.close()
+        if qq_client is not None:
+            await qq_client.close()
         await bridge.close()
         await session.close()
+    return restart_requested

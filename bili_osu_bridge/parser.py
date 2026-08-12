@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+from urllib.parse import urlsplit
 
 from .beatmap import BeatmapInfo, BeatmapReference
 
@@ -79,8 +80,57 @@ def parse_beatmap_reference(
     return BeatmapReference(kind, source_id, mods)
 
 
+def parse_osu_beatmap_url(
+    message: str,
+    keywords: tuple[str, ...] = ("点歌",),
+) -> BeatmapReference | None:
+    """Parse one official osu! beatmap URL, optionally followed by Mods."""
+    if not isinstance(message, str):
+        return None
+    cleaned = _remove_request_keyword(message, keywords)
+    parts = cleaned.split(maxsplit=1)
+    if not parts:
+        return None
+    try:
+        parsed = urlsplit(parts[0])
+    except ValueError:
+        return None
+    if (
+        parsed.scheme.lower() not in {"http", "https"}
+        or (parsed.hostname or "").lower() not in {"osu.ppy.sh", "www.osu.ppy.sh"}
+        or parsed.username is not None
+        or parsed.password is not None
+    ):
+        return None
+
+    segments = [segment for segment in parsed.path.split("/") if segment]
+    kind = ""
+    source_id = 0
+    if len(segments) == 2 and segments[0].lower() in {"b", "beatmaps"}:
+        kind, raw_id = "beatmap", segments[1]
+    elif len(segments) == 2 and segments[0].lower() == "s":
+        kind, raw_id = "set", segments[1]
+    elif len(segments) == 2 and segments[0].lower() == "beatmapsets":
+        fragment = re.fullmatch(r"[A-Za-z0-9_-]+/([0-9]{1,10})", parsed.fragment)
+        if fragment is not None:
+            kind, raw_id = "beatmap", fragment.group(1)
+        else:
+            kind, raw_id = "set", segments[1]
+    else:
+        return None
+    if not raw_id.isdigit():
+        return None
+    source_id = int(raw_id)
+    if source_id <= 0:
+        return None
+    mods = _parse_mods(parts[1] if len(parts) == 2 else "")
+    if mods is None:
+        return None
+    return BeatmapReference(kind, source_id, mods)
+
+
 def parse_beatmap_id(message: str) -> int | None:
-    """Backward-compatible helper. Plain numbers are Beatmap difficulty IDs."""
+    """Backward-compatible helper. Plain numbers are beatmap difficulty IDs."""
     reference = parse_beatmap_reference(message)
     if reference is None or reference.kind != "beatmap":
         return None
@@ -104,7 +154,7 @@ def _format_number(value: float) -> str:
     return f"{value:g}"
 
 
-def _format_duration(total_seconds: int) -> str:
+def format_duration(total_seconds: int) -> str:
     hours, remainder = divmod(max(0, total_seconds), 3600)
     minutes, seconds = divmod(remainder, 60)
     if hours:
@@ -141,13 +191,14 @@ def format_irc_request(
         details = (
             f"{_format_number(bpm)} BPM, "
             f"{stars}, "
-            f"{_format_duration(length)}"
+            f"{format_duration(length)}"
         )
         mirrors = ""
         if info.beatmapset_id > 0:
             mirrors = (
-                f" [https://dl.sayobot.cn/beatmaps/download/full/{info.beatmapset_id} Sayobot Full]"
-                f" [https://dl.sayobot.cn/beatmaps/download/novideo/{info.beatmapset_id} Sayobot NoVideo]"
+                " Sayobot:"
+                f"[https://dl.sayobot.cn/beatmaps/download/full/{info.beatmapset_id} Full]"
+                f"~[https://dl.sayobot.cn/beatmaps/download/novideo/{info.beatmapset_id} NoVideo]"
             )
         return (
             f"[{requester}] -> [{info.status}] "
@@ -158,10 +209,10 @@ def format_irc_request(
         )
     if reference.kind == "set":
         return (
-            f"[https://osu.ppy.sh/beatmapsets/{reference.id} Beatmapset {reference.id}] "
+            f"[https://osu.ppy.sh/beatmapsets/{reference.id} beatmapset {reference.id}] "
             f"<- osu-BiliRequest: {requester}{(' ' + reference.mods_text) if reference.mods else ''}"
         )
     return (
-        f"[https://osu.ppy.sh/b/{reference.id} Beatmap {reference.id}] "
+        f"[https://osu.ppy.sh/b/{reference.id} beatmap {reference.id}] "
         f"<- osu-BiliRequest: {requester}{(' ' + reference.mods_text) if reference.mods else ''}"
     )

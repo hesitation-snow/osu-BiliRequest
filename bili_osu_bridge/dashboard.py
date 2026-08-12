@@ -1,9 +1,13 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 from collections.abc import Callable
+from pathlib import Path
 
 from aiohttp import web
+
+from .setup_web import SetupWebServer
 
 
 logger = logging.getLogger(__name__)
@@ -76,6 +80,8 @@ _DASHBOARD_HTML = r"""<!doctype html>
     .overlay-url { color: #cbd2e2; font: 13px/1.4 Consolas, monospace; }
     .copy-button { appearance: none; border: 1px solid #4c5570; border-radius: 8px; padding: 5px 10px; background: #242a3a; color: var(--text); font: inherit; font-size: 12px; font-weight: 700; cursor: pointer; }
     .copy-button:hover { border-color: var(--pink); color: var(--pink); }
+    .settings-link { appearance: none; display: inline-flex; align-items: center; border: 1px solid #4c5570; border-radius: 10px; padding: 8px 13px; color: var(--text); background: #202636cc; text-decoration: none; font: inherit; font-weight: 700; cursor: pointer; }
+    .settings-link:hover { border-color: var(--pink); color: var(--pink); }
     footer { margin-top: 28px; color: var(--muted); font-size: 12px; text-align: center; }
     @media (max-width: 680px) {
       header { align-items: start; flex-direction: column; }
@@ -90,7 +96,7 @@ _DASHBOARD_HTML = r"""<!doctype html>
 <main>
   <header>
     <div><h1><span>osu</span>-BiliRequest</h1><div class="subtitle">tosu live queue dashboard</div></div>
-    <div id="tosu-badge" class="badge"><i class="dot"></i><span>tosu 连接中</span></div>
+    <div style="display:flex;align-items:center;gap:10px"><a class="settings-link" href="/settings">设置</a><button id="restart-app" class="settings-link" type="button">重启软件</button><div id="tosu-badge" class="badge"><i class="dot"></i><span>tosu 连接中</span></div></div>
   </header>
   <section class="grid">
     <div class="panel">
@@ -118,11 +124,12 @@ _DASHBOARD_HTML = r"""<!doctype html>
   <footer>仅监听 http://127.0.0.1 · 页面每秒自动更新</footer>
 </main>
 <script>
-  const labels = {queued: '等待中', processing: '处理中', sent: '已发送', failed: '失败'};
+  const labels = {queued: '等待中', processing: '处理中', sent: '已发送', skipped: '已跳过', failed: '失败'};
   const requestsNode = document.getElementById('requests');
   const overlayPreview = document.getElementById('overlay-preview');
   const overlayUrl = `${location.origin}/overlay`;
   const copyButton = document.getElementById('copy-overlay-url');
+  const restartButton = document.getElementById('restart-app');
   document.getElementById('overlay-url').textContent = overlayUrl;
   copyButton.addEventListener('click', async () => {
     try {
@@ -139,6 +146,20 @@ _DASHBOARD_HTML = r"""<!doctype html>
     }
     copyButton.textContent = '已复制';
     setTimeout(() => { copyButton.textContent = '复制 URL'; }, 1500);
+  });
+  restartButton.addEventListener('click', async () => {
+    if (!confirm('立即重启 osu-BiliRequest，使已保存的设置生效？')) return;
+    restartButton.disabled = true;
+    restartButton.textContent = '正在重启…';
+    try {
+      const response = await fetch('/api/restart', {method: 'POST'});
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      restartButton.textContent = '重启请求已发送';
+    } catch (error) {
+      restartButton.disabled = false;
+      restartButton.textContent = '重启软件';
+      alert(`重启失败：${error.message}`);
+    }
   });
   window.addEventListener('message', event => {
     if (
@@ -217,7 +238,7 @@ _DASHBOARD_HTML = r"""<!doctype html>
       badge.classList.toggle('connected', data.tosu.connected);
       badge.querySelector('span').textContent = !data.tosu.enabled ? 'tosu 已停用' : data.tosu.connected ? 'tosu 已连接' : 'tosu 未连接';
       document.getElementById('current-map').textContent = data.tosu.connected ? data.tosu.beatmapDisplayLabel : (!data.tosu.enabled ? '未启用 tosu 状态同步' : '无法读取 osu! 当前谱面');
-      document.getElementById('game-state').textContent = data.tosu.connected ? `状态：${data.tosu.state || '未知'} · Beatmap ${data.tosu.beatmapId || '—'}` : (data.tosu.error || '请确认 tosu 正在运行');
+      document.getElementById('game-state').textContent = data.tosu.connected ? `状态：${data.tosu.state || '未知'} · beatmap ${data.tosu.beatmapId || '—'}` : (data.tosu.error || '请确认 tosu 正在运行');
       document.getElementById('queue-count').textContent = data.queueCount;
       document.getElementById('last-update').textContent = new Date().toLocaleTimeString();
       renderRequests(data.requests);
@@ -272,8 +293,17 @@ _OVERLAY_HTML = r"""<!doctype html>
       border-radius: 15px;
       background: var(--panel);
       box-shadow: 0 8px 24px #0008;
-      animation: enter .25s ease both;
+      opacity: 1;
+      transform: translateX(0);
+      transition: opacity .55s ease, transform .55s cubic-bezier(.2,.8,.2,1);
       overflow: hidden;
+    }
+    .request.entering { opacity: 0; transform: translateX(52px); }
+    .request.leaving {
+      opacity: 0;
+      transform: translateX(-52px);
+      transition-timing-function: ease, cubic-bezier(.4,0,1,1);
+      pointer-events: none;
     }
     .request.processing { border-left-color: var(--blue); }
     .request.playing { border-left-color: var(--green); background: rgba(13, 34, 27, .95); }
@@ -320,7 +350,6 @@ _OVERLAY_HTML = r"""<!doctype html>
     .waiting-more { margin-left: 5px; color: var(--muted); font-size: 11px; font-weight: 800; white-space: nowrap; }
     .map { min-width: 0; color: var(--text); font-size: 19px; line-height: 23px; font-weight: 800; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .difficulty { min-width: 0; color: var(--muted); font-size: 12px; line-height: 16px; font-weight: 800; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    @keyframes enter { from { opacity: 0; transform: translateX(15px); } }
   </style>
 </head>
 <body>
@@ -328,6 +357,8 @@ _OVERLAY_HTML = r"""<!doctype html>
   <script>
     const queueNode = document.getElementById('queue');
     let row = null;
+    let transitioning = false;
+    let queuedRender = null;
 
     function reportHeight() {
       if (window.parent !== window) {
@@ -393,7 +424,7 @@ _OVERLAY_HTML = r"""<!doctype html>
         avatar.className = 'waiting-avatar';
         avatar.title = item.requester || 'bilibili 观众';
         avatar.textContent = (item.requester || '?').trim().slice(0, 1);
-        const avatarUrl = item.avatarUrl || '';
+        const avatarUrl = item.overlayAvatarUrl || item.avatarUrl || '';
         if (avatarUrl) {
           const image = document.createElement('img');
           image.alt = '';
@@ -418,9 +449,14 @@ _OVERLAY_HTML = r"""<!doctype html>
         difficulty = difficulty || data.tosu.beatmapVersion || '';
       }
       node.parts.map.textContent = title || item.overlayMapLabel || item.mapLabel || item.reference || '正在解析谱面…';
-      node.parts.difficulty.textContent = difficulty ? `[${difficulty}]` : '';
+      const stats = [
+        difficulty ? `[${difficulty}]` : '',
+        item.durationLabel || '',
+        item.starsLabel || ''
+      ].filter(Boolean);
+      node.parts.difficulty.textContent = stats.join(' · ');
       renderWaiting(node, data);
-      const avatarUrl = item.avatarUrl || '';
+      const avatarUrl = item.overlayAvatarUrl || item.avatarUrl || '';
       if (node.parts.image.dataset.url !== avatarUrl) {
         node.parts.image.dataset.url = avatarUrl;
         node.parts.image.style.display = avatarUrl ? 'block' : 'none';
@@ -429,21 +465,57 @@ _OVERLAY_HTML = r"""<!doctype html>
       }
     }
 
+    function show(item, data) {
+      const id = String(item.id);
+      row = makeRow(id);
+      row.classList.add('entering');
+      queueNode.replaceChildren(row);
+      updateRow(row, item, data);
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        if (row) row.classList.remove('entering');
+      }));
+      reportHeight();
+    }
+
     function render(data) {
       const item = data.overlay && data.overlay.current;
-      if (!item) {
-        queueNode.replaceChildren();
-        row = null;
+      if (transitioning) {
+        queuedRender = {item, data};
+        return;
+      }
+      if (row && item && row.dataset.id === String(item.id)) {
+        updateRow(row, item, data);
         reportHeight();
         return;
       }
-      const id = String(item.id);
-      if (!row || row.dataset.id !== id) {
-        row = makeRow(id);
-        queueNode.replaceChildren(row);
+      if (!row) {
+        if (item) show(item, data);
+        else reportHeight();
+        return;
       }
-      updateRow(row, item, data);
-      reportHeight();
+
+      transitioning = true;
+      queuedRender = {item, data};
+      const leaving = row;
+      leaving.classList.add('leaving');
+      let finished = false;
+      const finish = () => {
+        if (finished) return;
+        finished = true;
+        leaving.removeEventListener('transitionend', onTransitionEnd);
+        if (leaving.isConnected) leaving.remove();
+        row = null;
+        transitioning = false;
+        const next = queuedRender;
+        queuedRender = null;
+        if (next && next.item) show(next.item, next.data);
+        else reportHeight();
+      };
+      const onTransitionEnd = event => {
+        if (event.propertyName === 'opacity') finish();
+      };
+      leaving.addEventListener('transitionend', onTransitionEnd);
+      setTimeout(finish, 800);
     }
 
     async function refresh() {
@@ -452,9 +524,7 @@ _OVERLAY_HTML = r"""<!doctype html>
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
         render(await response.json());
       } catch (_) {
-        queueNode.replaceChildren();
-        row = null;
-        reportHeight();
+        render({overlay: {current: null}});
       }
     }
     refresh();
@@ -470,21 +540,34 @@ class DashboardServer:
         self,
         port: int,
         status_provider: Callable[[], dict],
+        config_path: Path | None = None,
     ) -> None:
         self.port = port
         self.status_provider = status_provider
+        self.settings_server = (
+            SetupWebServer(config_path, listen_port=port)
+            if config_path is not None
+            else None
+        )
         self._runner: web.AppRunner | None = None
+        self._restart_event = asyncio.Event()
 
     async def start(self) -> None:
         app = web.Application(client_max_size=128 * 1024)
         app.router.add_get("/", self._index)
         app.router.add_get("/overlay", self._overlay)
         app.router.add_get("/api/status", self._status)
+        app.router.add_post("/api/restart", self._restart)
+        if self.settings_server is not None:
+            self.settings_server.add_routes(app)
         self._runner = web.AppRunner(app, access_log=None)
         await self._runner.setup()
         site = web.TCPSite(self._runner, "127.0.0.1", self.port)
         await site.start()
         logger.info("Web 队列页面：http://127.0.0.1:%d/", self.port)
+
+    async def wait_for_restart(self) -> None:
+        await self._restart_event.wait()
 
     async def close(self) -> None:
         if self._runner is not None:
@@ -504,6 +587,11 @@ class DashboardServer:
             self.status_provider(),
             headers={"Cache-Control": "no-store"},
         )
+
+    async def _restart(self, _request: web.Request) -> web.Response:
+        asyncio.get_running_loop().call_later(0.25, self._restart_event.set)
+        logger.info("收到 Web 页面重启请求")
+        return web.json_response({"ok": True})
 
     async def _overlay(self, _request: web.Request) -> web.Response:
         return web.Response(
