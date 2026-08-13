@@ -17,6 +17,11 @@
 - 连接 tosu 后可匹配主播当前谱面，并根据选谱、游玩和切歌状态自动推进队列。
 - 支持冷却、重复点歌限制、队列上限、用户与谱面黑名单、Unicode 歌名和 HTTP 代理。
 
+## 功能截图
+<img src="assets/screenshot1.png" alt="p1" width="1233">
+<img src="assets/screenshot4.jpg" alt="p1" width="1920">
+<img src="assets/screenshot5.png" alt="p1" width="1000">
+
 ## 快速开始
 
 1. 从 [Releases](https://github.com/hesitation-snow/osu-BiliRequest/releases) 下载 `osu-BiliRequest.exe`，放进单独的文件夹并解压后运行。
