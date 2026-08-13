@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>osu-BiliRequest custom overlay example</title>
+  <style>
+    :root {
+      --accent: #fb7299;
+      --panel: rgba(15, 18, 28, .92);
+      --text: #fff;
+      --muted: #c3c9d6;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; overflow: hidden; background: transparent; }
+    body { padding: 6px; color: var(--text); font: 15px/1.35 "Segoe UI", sans-serif; }
+    #card { display: none; align-items: center; gap: 12px; min-height: 84px; padding: 10px 14px; border-left: 4px solid var(--accent); border-radius: 14px; background: var(--panel); }
+    #card.visible { display: flex; }
+    #avatar { width: 58px; height: 58px; border-radius: 50%; object-fit: cover; background: var(--accent); }
+    #content { min-width: 0; }
+    #requester { color: var(--accent); font-size: 12px; font-weight: 700; }
+    #title { overflow: hidden; font-size: 19px; font-weight: 800; text-overflow: ellipsis; white-space: nowrap; }
+    #meta { color: var(--muted); font-size: 12px; }
+  </style>
+</head>
+<body>
+  <article id="card">
+    <img id="avatar" alt="">
+    <div id="content">
+      <div id="requester"></div>
+      <div id="title"></div>
+      <div id="meta"></div>
+    </div>
+  </article>
+  <script>
+    const port = new URLSearchParams(location.search).get('port') || '24051';
+    const card = document.getElementById('card');
+    const avatar = document.getElementById('avatar');
+    const requester = document.getElementById('requester');
+    const title = document.getElementById('title');
+    const meta = document.getElementById('meta');
+
+    function render(data) {
+      const item = data.overlay && data.overlay.current;
+      card.classList.toggle('visible', Boolean(item));
+      if (!item) return;
+      requester.textContent = item.requester || '观众';
+      title.textContent = item.overlayTitleLabel || item.mapLabel || item.reference;
+      meta.textContent = [
+        item.overlayDifficulty ? `[${item.overlayDifficulty}]` : '',
+        item.durationLabel,
+        item.starsLabel,
+        data.overlay.playing ? '游玩中' : ''
+      ].filter(Boolean).join(' · ');
+      const avatarUrl = item.overlayAvatarUrl || item.avatarUrl || '';
+      avatar.style.display = avatarUrl ? 'block' : 'none';
+      if (avatarUrl) avatar.src = avatarUrl;
+    }
+
+    function connect() {
+      const socket = new WebSocket(`ws://127.0.0.1:${port}/api/v1/ws`);
+      socket.onmessage = event => {
+        const message = JSON.parse(event.data);
+        if (message.type === 'status') render(message.data);
+      };
+      socket.onclose = () => setTimeout(connect, 2000);
+    }
+    connect();
+  </script>
+</body>
+</html>
