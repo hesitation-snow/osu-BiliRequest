@@ -108,6 +108,9 @@ _DASHBOARD_HTML = r"""<!doctype html>
     footer { margin-top: 28px; color: var(--muted); font-size: 12px; text-align: center; }
     footer a { color: var(--blue); text-decoration: none; }
     footer a:hover { text-decoration: underline; }
+    .github-link { display: inline-flex; align-items: center; justify-content: center; color: var(--muted); vertical-align: -5px; }
+    .github-link:hover { color: var(--text); text-decoration: none; }
+    .github-link svg { width: 20px; height: 20px; fill: currentColor; }
     @media (max-width: 680px) {
       header { align-items: start; flex-direction: column; }
       .grid { grid-template-columns: 1fr; }
@@ -146,8 +149,7 @@ _DASHBOARD_HTML = r"""<!doctype html>
     </div>
   </div>
   <section class="preview-shell"><iframe id="overlay-preview" src="/overlay" title="OBS 点歌 Overlay"></iframe></section>
-  <p class="muted">tosu 自定义插件：从 Releases 下载 <code>osu-BiliRequest-tosu-overlay.zip</code>，将其中的 <code>osu-BiliRequest</code> 文件夹复制到 tosu 的 <code>static</code> 目录。插件会分别连接 tosu 与点歌队列 WebSocket。</p>
-  <footer>仅监听 http://127.0.0.1 · 页面每秒自动更新 · <a href="/api" target="_blank">Overlay API</a> · <a href="https://github.com/hesitation-snow/osu-BiliRequest" target="_blank" rel="noreferrer">GitHub 开源地址</a></footer>
+  <footer>仅监听 http://127.0.0.1 · 页面每秒自动更新 · <a href="/api" target="_blank">Overlay API</a> · <a class="github-link" href="https://github.com/hesitation-snow/osu-BiliRequest" target="_blank" rel="noreferrer" aria-label="GitHub" title="GitHub"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 0C3.58 0 0 3.64 0 8.13c0 3.59 2.29 6.63 5.47 7.71.4.08.55-.18.55-.39 0-.19-.01-.83-.01-1.51-2.01.38-2.53-.5-2.69-.96-.09-.23-.48-.96-.82-1.15-.28-.15-.68-.53-.01-.54.63-.01 1.08.59 1.23.83.72 1.23 1.87.88 2.33.67.07-.53.28-.88.51-1.08-1.78-.21-3.64-.91-3.64-4.02 0-.89.31-1.62.82-2.19-.08-.21-.36-1.04.08-2.16 0 0 .67-.22 2.2.84A7.42 7.42 0 0 1 8 3.91c.68 0 1.36.09 2 .27 1.53-1.06 2.2-.84 2.2-.84.44 1.12.16 1.95.08 2.16.51.57.82 1.3.82 2.19 0 3.12-1.87 3.81-3.65 4.02.29.25.54.74.54 1.5 0 1.08-.01 1.95-.01 2.22 0 .22.15.47.55.39A8.16 8.16 0 0 0 16 8.13C16 3.64 12.42 0 8 0Z"/></svg></a></footer>
 </main>
 <script>
   const labels = {queued: '等待中', processing: '处理中', sent: '已发送', skipped: '已跳过', failed: '失败'};
@@ -289,6 +291,7 @@ _API_DOC_HTML = r"""<!doctype html>
   main{width:min(900px,calc(100% - 30px));margin:auto;padding:34px 0 60px}h1{margin:0 0 8px;font-size:36px}h1 span{color:var(--pink)}
   h2{margin:28px 0 10px}.muted{color:var(--muted)}.card{padding:18px;border:1px solid var(--line);border-radius:14px;background:var(--panel);margin:12px 0}
   code{color:#ffd2e2}pre{overflow:auto;padding:14px;border-radius:10px;background:#0b0e15;color:#dce6f8}a{color:var(--blue)}li{margin:5px 0}
+  .github-link{display:inline-flex;align-items:center;justify-content:center;color:var(--muted);vertical-align:-5px}.github-link:hover{color:var(--text)}.github-link svg{width:20px;height:20px;fill:currentColor}
 </style></head><body><main>
 <h1><span>osu</span>-BiliRequest Overlay API</h1>
 <p class="muted">供 OBS 自定义页面、浏览器 Overlay 和本机工具读取。服务只监听 127.0.0.1，允许同源、本机网页及 file:// 页面访问，不包含 Cookie、密码或 Client Secret。</p>
@@ -311,7 +314,7 @@ ws.onmessage = event =&gt; {
 };</code></pre>
 <h2>tosu 静态插件</h2><p>将 Releases 中 <code>osu-BiliRequest-tosu-overlay.zip</code> 内的插件文件夹复制到 tosu <code>static</code> 目录。插件同时连接 <code>ws://127.0.0.1:24050/websocket/v2</code> 与本页的 <code>/api/v1/ws</code>，并支持断线重连和自行修改 HTML/CSS/JavaScript。</p>
 <h2>常用字段</h2><p><code>overlay.current</code>、<code>overlay.waiting</code>、<code>overlay.remainingCount</code>、<code>overlay.playing</code>、<code>tosu</code>、<code>requests</code> 和 <code>queueCount</code>。字段内容可直接打开 <a href="/api/v1/status">/api/v1/status</a> 查看。</p>
-<p><a href="/">返回队列页面</a> · <a href="https://github.com/hesitation-snow/osu-BiliRequest" target="_blank" rel="noreferrer">GitHub 开源地址</a></p>
+<p><a href="/">返回队列页面</a> · <a class="github-link" href="https://github.com/hesitation-snow/osu-BiliRequest" target="_blank" rel="noreferrer" aria-label="GitHub" title="GitHub"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 0C3.58 0 0 3.64 0 8.13c0 3.59 2.29 6.63 5.47 7.71.4.08.55-.18.55-.39 0-.19-.01-.83-.01-1.51-2.01.38-2.53-.5-2.69-.96-.09-.23-.48-.96-.82-1.15-.28-.15-.68-.53-.01-.54.63-.01 1.08.59 1.23.83.72 1.23 1.87.88 2.33.67.07-.53.28-.88.51-1.08-1.78-.21-3.64-.91-3.64-4.02 0-.89.31-1.62.82-2.19-.08-.21-.36-1.04.08-2.16 0 0 .67-.22 2.2.84A7.42 7.42 0 0 1 8 3.91c.68 0 1.36.09 2 .27 1.53-1.06 2.2-.84 2.2-.84.44 1.12.16 1.95.08 2.16.51.57.82 1.3.82 2.19 0 3.12-1.87 3.81-3.65 4.02.29.25.54.74.54 1.5 0 1.08-.01 1.95-.01 2.22 0 .22.15.47.55.39A8.16 8.16 0 0 0 16 8.13C16 3.64 12.42 0 8 0Z"/></svg></a></p>
 </main></body></html>"""
 
 
