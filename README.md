@@ -12,7 +12,7 @@
 - 接入 QQ 官方机器人，支持群聊 `@机器人`、私聊点歌及 `/list`、`/np`、`/skip`、`/help` 指令。
 - 识别 beatmap ID、beatmapset ID、osu! 谱面链接以及 `HD`、`HR`、`DT`、`NC`、`HT` 等 Mods。
 - 使用 osu! API 或官方谱面页获取标题、难度、BPM、星数和时长；osu! API 还能计算 Mods 后星数。
-- 可通过 osu! Bancho IRC 或自定义 IRC 服务器把点歌发送到游戏内，并附带 `Sayobot:[Full]~[NoVideo]` 下载链接。
+- 可通过 osu! Bancho IRC 或自定义 IRC 服务器把点歌发送到游戏内；消息内容可使用占位符模板自由组合，默认附带 `Sayobot:[Full]~[NoVideo]` 下载链接。
 - 提供本地 Web 队列和 OBS 透明 Overlay，显示点歌者、谱面资料及后续队列。
 - 连接 tosu 后可匹配主播当前谱面，并根据选谱、游玩和切歌状态自动推进队列。
 - 支持冷却、重复点歌限制、队列上限、用户与谱面黑名单、Unicode 歌名和 HTTP 代理。
@@ -68,9 +68,15 @@ b/5600294 +HDDT
 - Web 队列：`http://127.0.0.1:24051/`
 - 设置页面：`http://127.0.0.1:24051/settings`
 - OBS Overlay：`http://127.0.0.1:24051/overlay`
+- Overlay API 文档：`http://127.0.0.1:24051/api`
 - Overlay 推荐分辨率：`760 × 100`
 
 在 OBS 中添加“浏览器”来源并填写 Overlay 地址即可，无需自定义 CSS。无人点歌时 Overlay 保持透明，切换点歌时会滑入或滑出。
+
+需要完全自定义 Overlay 时，可以用任意 HTML/CSS/JavaScript 页面调用版本化 JSON 或 WebSocket 接口；默认 Overlay 和第三方页面可以同时使用。
+仓库中的 `examples/custom-overlay.html` 可以直接作为起点，修改 CSS 后以本地文件方式添加到 OBS 浏览器来源即可。
+
+需要作为 tosu 插件使用时，下载 `osu-BiliRequest-tosu-overlay.zip`，把其中完整的 `osu-BiliRequest` 文件夹解压到 tosu 的 `static` 目录。插件会同时通过 WebSocket 读取 tosu 游戏状态与 osu-BiliRequest 点歌队列，断线后自动重连；样式和字段可直接编辑插件中的 `main.css`、`index.html` 与 `main.js`。
 
 启用 tosu 后，正在游玩的队列项目会自动成为当前项；游玩结束并切换谱面后进入下一首。如果主播直接游玩队列中的其它谱面，该项目会自动提升为当前项。
 

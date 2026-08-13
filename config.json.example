@@ -18,6 +18,8 @@
     "username": "",
     "password": "",
     "targetUsername": "",
+    "messageTemplate": "[{requester}] -> [{status}] {beatmap_link} ({bpm} BPM, {stars}, {duration}){mods_suffix} {sayobot}",
+    "fallbackTemplate": "{reference_link} <- osu-BiliRequest: {requester}{mods_suffix}",
     "sendIntervalSeconds": 1.0,
     "sendStartupMessage": true
   },

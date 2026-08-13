@@ -9,6 +9,7 @@ __pycache__/
 .coverage
 .venv/
 venv/
+.runtime/
 build/
 dist/
 *.spec

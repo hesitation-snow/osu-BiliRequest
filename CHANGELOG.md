@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.1.1 - 2026-08-13
+
+- Add configurable IRC message and fallback templates with validated placeholders while preserving the existing rich request format as the default.
+- Add versioned JSON and WebSocket Overlay APIs for fully custom OBS pages, plus local API documentation.
+- Add GitHub source links to the queue dashboard and settings page.
+- Add an installable tosu static Overlay that connects to both tosu v2 and osu-BiliRequest WebSockets, supports independent reconnects, and remains fully editable with HTML/CSS/JavaScript.
+
 ## 1.1.0 - 2026-08-12
 
 - Add smooth Overlay slide-in and slide-out transitions when requests appear, finish or switch, and show difficulty, duration and star rating beside each request.
