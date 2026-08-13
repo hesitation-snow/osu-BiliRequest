@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>osu-BiliRequest for tosu</title>
+  <link rel="stylesheet" href="./main.css">
+</head>
+<body>
+  <main id="stage" aria-live="polite">
+    <article id="request-card" class="request-card" hidden>
+      <div id="avatar" class="avatar"><span id="avatar-fallback">?</span></div>
+      <div class="request-content">
+        <div id="requester" class="requester"></div>
+        <div id="title" class="title"></div>
+        <div id="meta" class="meta"></div>
+      </div>
+      <div id="waiting" class="waiting">
+        <div id="waiting-avatars" class="waiting-avatars"></div>
+        <div id="waiting-count" class="waiting-count"></div>
+      </div>
+    </article>
+    <aside id="debug" class="debug" hidden></aside>
+  </main>
+  <script src="./main.js"></script>
+</body>
+</html>
