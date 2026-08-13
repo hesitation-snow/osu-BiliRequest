@@ -1,6 +1,6 @@
 Usecase: ingame,obs-overlays
 Name: osu-BiliRequest
-Version: 1.1.1
+Version: 1.1.2
 Author: hesitation-snow
 CompatibleWith: tosu
 Resolution: 760x100
