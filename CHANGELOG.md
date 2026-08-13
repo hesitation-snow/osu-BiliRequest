@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.1.2 - 2026-08-13
+
+- Replace the long GitHub source text in WebUI footers with a compact, accessible GitHub icon.
+- Remove the tosu Overlay installation paragraph from the queue dashboard and the QQ command-configuration notice from the settings page.
+
 ## 1.1.1 - 2026-08-13
 
 - Add configurable IRC message and fallback templates with validated placeholders while preserving the existing rich request format as the default.
