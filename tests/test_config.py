@@ -260,7 +260,7 @@ class SetupWebTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("qqAllowedGroupOpenids", html)
         self.assertIn("qqOwnerOpenids", html)
         self.assertIn("/ownerid", html)
-        self.assertIn("QQ群内点歌或使用指令时，需要先 @机器人", html)
+        self.assertNotIn("QQ群内点歌或使用指令时，需要先 @机器人", html)
         self.assertIn('class="home-link" href="/"', html)
         self.assertIn("osu-BiliRequest 设置", html)
         self.assertIn("网络代理", html)
@@ -285,7 +285,10 @@ class SetupWebTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn('id="save"', html)
         self.assertIn("保存配置", html)
         self.assertIn("扫码登录", html)
-        self.assertIn("GitHub 开源地址", html)
+        self.assertIn('class="github-link"', html)
+        self.assertIn('aria-label="GitHub"', html)
+        self.assertNotIn("GitHub 开源地址", html)
+        self.assertNotIn("在 QQ 开放平台添加 list、np、skip、help 指令。", html)
         self.assertTrue(server._public_config()["values"]["apiEnabled"])
 
 

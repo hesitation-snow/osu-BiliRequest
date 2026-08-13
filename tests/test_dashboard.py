@@ -48,10 +48,12 @@ class DashboardTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn('href="/settings"', html)
         self.assertIn('id="restart-app"', html)
         self.assertIn("/api/restart", html)
-        self.assertIn("GitHub 开源地址", html)
+        self.assertIn('class="github-link"', html)
+        self.assertIn('aria-label="GitHub"', html)
+        self.assertNotIn("GitHub 开源地址", html)
         self.assertIn('href="/api"', html)
-        self.assertIn("osu-BiliRequest-tosu-overlay.zip", html)
-        self.assertIn("tosu 与点歌队列 WebSocket", html)
+        self.assertNotIn("tosu 自定义插件：", html)
+        self.assertNotIn("tosu 与点歌队列 WebSocket", html)
 
     async def test_public_overlay_api_is_versioned_and_cors_enabled(self):
         payload = {
