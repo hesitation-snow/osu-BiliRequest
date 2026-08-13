@@ -6,6 +6,12 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
 
+from .parser import (
+    DEFAULT_IRC_FALLBACK_TEMPLATE,
+    DEFAULT_IRC_MESSAGE_TEMPLATE,
+    validate_irc_template,
+)
+
 
 _CONFIG_COMMENTS = """// 安全提醒：请勿公开分享此文件；其中包含登录账号、密码、Cookie 和 Client Secret。
 // Security warning: Do not share this file publicly; it contains login usernames, passwords, cookies, and client secrets.
@@ -98,6 +104,8 @@ class Config:
     qq_owner_openids: tuple[str, ...] = ()
     osu_irc_enabled: bool = True
     osu_irc_server: str = "irc.ppy.sh:6667"
+    irc_message_template: str = DEFAULT_IRC_MESSAGE_TEMPLATE
+    irc_fallback_template: str = DEFAULT_IRC_FALLBACK_TEMPLATE
     osu_api_enabled: bool = False
     osu_api_client_id: int = 0
     osu_api_client_secret: str = ""
@@ -172,6 +180,12 @@ class Config:
                 osu_irc_server=str(
                     osu_irc.get("server", "irc.ppy.sh:6667")
                 ).strip(),
+                irc_message_template=str(
+                    osu_irc.get("messageTemplate", DEFAULT_IRC_MESSAGE_TEMPLATE)
+                ),
+                irc_fallback_template=str(
+                    osu_irc.get("fallbackTemplate", DEFAULT_IRC_FALLBACK_TEMPLATE)
+                ),
                 osu_api_enabled=api_enabled,
                 osu_api_client_id=api_client_id,
                 osu_api_client_secret=api_client_secret,
@@ -251,6 +265,8 @@ class Config:
                 "username": self.osu_irc_username,
                 "password": self.osu_irc_password,
                 "targetUsername": self.osu_target_username,
+                "messageTemplate": self.irc_message_template,
+                "fallbackTemplate": self.irc_fallback_template,
                 "sendIntervalSeconds": self.irc_send_interval_seconds,
                 "sendStartupMessage": self.send_startup_message,
             },
@@ -315,6 +331,11 @@ class Config:
             raise ValueError("blacklist.beatmapIds 只能填写大于 0 的纯数字")
         if self.osu_irc_enabled and self.irc_send_interval_seconds < 0.5:
             raise ValueError("osuIrc.sendIntervalSeconds 不能小于 0.5")
+        validate_irc_template(self.irc_message_template)
+        validate_irc_template(
+            self.irc_fallback_template,
+            "osuIrc.fallbackTemplate",
+        )
         if self.osu_irc_enabled:
             _split_irc_server(self.osu_irc_server)
         if self.tosu_enabled and self.tosu_poll_interval_seconds < 0.25:

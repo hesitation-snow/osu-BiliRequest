@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from collections.abc import Callable
 from pathlib import Path
+from urllib.parse import urlsplit
 
 from aiohttp import web
 
@@ -11,6 +13,27 @@ from .setup_web import SetupWebServer
 
 
 logger = logging.getLogger(__name__)
+
+def _allowed_overlay_origin(origin: str) -> bool:
+    if not origin or origin == "null":
+        return True
+    try:
+        parsed = urlsplit(origin)
+    except ValueError:
+        return False
+    return (
+        parsed.scheme in {"http", "https"}
+        and parsed.hostname in {"127.0.0.1", "localhost", "::1"}
+    )
+
+
+def _api_headers(request: web.Request | None) -> dict[str, str]:
+    headers = {"Cache-Control": "no-store"}
+    origin = request.headers.get("Origin", "") if request is not None else ""
+    if origin and _allowed_overlay_origin(origin):
+        headers["Access-Control-Allow-Origin"] = origin
+        headers["Vary"] = "Origin"
+    return headers
 
 
 _DASHBOARD_HTML = r"""<!doctype html>
@@ -83,6 +106,8 @@ _DASHBOARD_HTML = r"""<!doctype html>
     .settings-link { appearance: none; display: inline-flex; align-items: center; border: 1px solid #4c5570; border-radius: 10px; padding: 8px 13px; color: var(--text); background: #202636cc; text-decoration: none; font: inherit; font-weight: 700; cursor: pointer; }
     .settings-link:hover { border-color: var(--pink); color: var(--pink); }
     footer { margin-top: 28px; color: var(--muted); font-size: 12px; text-align: center; }
+    footer a { color: var(--blue); text-decoration: none; }
+    footer a:hover { text-decoration: underline; }
     @media (max-width: 680px) {
       header { align-items: start; flex-direction: column; }
       .grid { grid-template-columns: 1fr; }
@@ -121,7 +146,8 @@ _DASHBOARD_HTML = r"""<!doctype html>
     </div>
   </div>
   <section class="preview-shell"><iframe id="overlay-preview" src="/overlay" title="OBS 点歌 Overlay"></iframe></section>
-  <footer>仅监听 http://127.0.0.1 · 页面每秒自动更新</footer>
+  <p class="muted">tosu 自定义插件：从 Releases 下载 <code>osu-BiliRequest-tosu-overlay.zip</code>，将其中的 <code>osu-BiliRequest</code> 文件夹复制到 tosu 的 <code>static</code> 目录。插件会分别连接 tosu 与点歌队列 WebSocket。</p>
+  <footer>仅监听 http://127.0.0.1 · 页面每秒自动更新 · <a href="/api" target="_blank">Overlay API</a> · <a href="https://github.com/hesitation-snow/osu-BiliRequest" target="_blank" rel="noreferrer">GitHub 开源地址</a></footer>
 </main>
 <script>
   const labels = {queued: '等待中', processing: '处理中', sent: '已发送', skipped: '已跳过', failed: '失败'};
@@ -252,6 +278,41 @@ _DASHBOARD_HTML = r"""<!doctype html>
 </body>
 </html>
 """
+
+
+_API_DOC_HTML = r"""<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>osu-BiliRequest Overlay API</title>
+<style>
+  :root{color-scheme:dark;--bg:#0d1018;--panel:#171b27;--line:#30374a;--text:#f3f5fb;--muted:#a6afc2;--pink:#fb7299;--blue:#64b5ff}
+  *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:15px/1.65 "Segoe UI","Microsoft YaHei",sans-serif}
+  main{width:min(900px,calc(100% - 30px));margin:auto;padding:34px 0 60px}h1{margin:0 0 8px;font-size:36px}h1 span{color:var(--pink)}
+  h2{margin:28px 0 10px}.muted{color:var(--muted)}.card{padding:18px;border:1px solid var(--line);border-radius:14px;background:var(--panel);margin:12px 0}
+  code{color:#ffd2e2}pre{overflow:auto;padding:14px;border-radius:10px;background:#0b0e15;color:#dce6f8}a{color:var(--blue)}li{margin:5px 0}
+</style></head><body><main>
+<h1><span>osu</span>-BiliRequest Overlay API</h1>
+<p class="muted">供 OBS 自定义页面、浏览器 Overlay 和本机工具读取。服务只监听 127.0.0.1，允许同源、本机网页及 file:// 页面访问，不包含 Cookie、密码或 Client Secret。</p>
+<div class="card"><strong>稳定版本：v1</strong><ul>
+  <li><code>GET /api/v1/status</code>：完整队列、tosu 和 Overlay 状态。</li>
+  <li><code>GET /api/v1/overlay</code>：面向 Overlay 的精简状态。</li>
+  <li><code>GET /api/v1/queue</code>：点歌记录与队列数量。</li>
+  <li><code>GET /api/v1/tosu</code>：主播当前 osu! 状态与谱面。</li>
+  <li><code>WS /api/v1/ws</code>：每秒推送一次完整状态，消息格式为 <code>{type, schemaVersion, data}</code>。</li>
+  <li><code>GET /api/v1</code>：机器可读的接口目录。</li>
+</ul></div>
+<h2>轮询示例</h2><pre><code>const data = await fetch('http://127.0.0.1:24051/api/v1/overlay')
+  .then(response =&gt; response.json());
+const current = data.overlay.current;
+if (current) console.log(current.requester, current.overlayTitleLabel);</code></pre>
+<h2>WebSocket 示例</h2><pre><code>const ws = new WebSocket('ws://127.0.0.1:24051/api/v1/ws');
+ws.onmessage = event =&gt; {
+  const message = JSON.parse(event.data);
+  if (message.type === 'status') render(message.data);
+};</code></pre>
+<h2>tosu 静态插件</h2><p>将 Releases 中 <code>osu-BiliRequest-tosu-overlay.zip</code> 内的插件文件夹复制到 tosu <code>static</code> 目录。插件同时连接 <code>ws://127.0.0.1:24050/websocket/v2</code> 与本页的 <code>/api/v1/ws</code>，并支持断线重连和自行修改 HTML/CSS/JavaScript。</p>
+<h2>常用字段</h2><p><code>overlay.current</code>、<code>overlay.waiting</code>、<code>overlay.remainingCount</code>、<code>overlay.playing</code>、<code>tosu</code>、<code>requests</code> 和 <code>queueCount</code>。字段内容可直接打开 <a href="/api/v1/status">/api/v1/status</a> 查看。</p>
+<p><a href="/">返回队列页面</a> · <a href="https://github.com/hesitation-snow/osu-BiliRequest" target="_blank" rel="noreferrer">GitHub 开源地址</a></p>
+</main></body></html>"""
 
 
 _OVERLAY_HTML = r"""<!doctype html>
@@ -557,6 +618,13 @@ class DashboardServer:
         app.router.add_get("/", self._index)
         app.router.add_get("/overlay", self._overlay)
         app.router.add_get("/api/status", self._status)
+        app.router.add_get("/api", self._api_docs)
+        app.router.add_get("/api/v1", self._api_v1)
+        app.router.add_get("/api/v1/status", self._api_status)
+        app.router.add_get("/api/v1/overlay", self._api_overlay)
+        app.router.add_get("/api/v1/queue", self._api_queue)
+        app.router.add_get("/api/v1/tosu", self._api_tosu)
+        app.router.add_get("/api/v1/ws", self._api_websocket)
         app.router.add_post("/api/restart", self._restart)
         if self.settings_server is not None:
             self.settings_server.add_routes(app)
@@ -582,11 +650,101 @@ class DashboardServer:
             headers={"Cache-Control": "no-store"},
         )
 
-    async def _status(self, _request: web.Request) -> web.Response:
+    async def _status(self, request: web.Request) -> web.Response:
         return web.json_response(
             self.status_provider(),
+            headers=_api_headers(request),
+        )
+
+    async def _api_docs(self, _request: web.Request) -> web.Response:
+        return web.Response(
+            text=_API_DOC_HTML,
+            content_type="text/html",
+            charset="utf-8",
             headers={"Cache-Control": "no-store"},
         )
+
+    async def _api_status(self, request: web.Request) -> web.Response:
+        status = dict(self.status_provider())
+        status["schemaVersion"] = 1
+        status["generatedAt"] = time.time()
+        return web.json_response(status, headers=_api_headers(request))
+
+    async def _api_v1(self, request: web.Request) -> web.Response:
+        return web.json_response(
+            {
+                "name": "osu-BiliRequest Overlay API",
+                "schemaVersion": 1,
+                "endpoints": {
+                    "status": "/api/v1/status",
+                    "overlay": "/api/v1/overlay",
+                    "queue": "/api/v1/queue",
+                    "tosu": "/api/v1/tosu",
+                    "websocket": "/api/v1/ws",
+                    "documentation": "/api",
+                },
+            },
+            headers=_api_headers(request),
+        )
+
+    async def _api_overlay(self, request: web.Request) -> web.Response:
+        status = self.status_provider()
+        return web.json_response(
+            {
+                "schemaVersion": 1,
+                "generatedAt": time.time(),
+                "overlay": status.get("overlay", {}),
+                "tosu": status.get("tosu", {}),
+                "queueCount": status.get("queueCount", 0),
+                "requests": status.get("requests", []),
+            },
+            headers=_api_headers(request),
+        )
+
+    async def _api_queue(self, request: web.Request) -> web.Response:
+        status = self.status_provider()
+        return web.json_response(
+            {
+                "schemaVersion": 1,
+                "generatedAt": time.time(),
+                "queueCount": status.get("queueCount", 0),
+                "requests": status.get("requests", []),
+            },
+            headers=_api_headers(request),
+        )
+
+    async def _api_tosu(self, request: web.Request) -> web.Response:
+        status = self.status_provider()
+        return web.json_response(
+            {
+                "schemaVersion": 1,
+                "generatedAt": time.time(),
+                "tosu": status.get("tosu", {}),
+            },
+            headers=_api_headers(request),
+        )
+
+    async def _api_websocket(self, request: web.Request) -> web.WebSocketResponse:
+        if not _allowed_overlay_origin(request.headers.get("Origin", "")):
+            raise web.HTTPForbidden(text="Overlay WebSocket 只允许本机页面连接")
+        websocket = web.WebSocketResponse(heartbeat=30)
+        await websocket.prepare(request)
+        try:
+            while not websocket.closed:
+                await websocket.send_json(
+                    {
+                        "type": "status",
+                        "schemaVersion": 1,
+                        "generatedAt": time.time(),
+                        "data": self.status_provider(),
+                    }
+                )
+                await asyncio.sleep(1)
+        except (asyncio.CancelledError, ConnectionError, RuntimeError):
+            pass
+        finally:
+            await websocket.close()
+        return websocket
 
     async def _restart(self, _request: web.Request) -> web.Response:
         asyncio.get_running_loop().call_later(0.25, self._restart_event.set)

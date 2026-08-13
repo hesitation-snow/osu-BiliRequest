@@ -697,8 +697,11 @@ class RequestBridge:
                     request.reference,
                     request.requester_name,
                     info,
-                    modded_stars,
-                    self.config.use_unicode_irc,
+                    modded_stars=modded_stars,
+                    use_unicode_metadata=self.config.use_unicode_irc,
+                    message_template=self.config.irc_message_template,
+                    fallback_template=self.config.irc_fallback_template,
+                    platform=record.source if record is not None else "",
                 )
                 if self.sender is not None:
                     await self.sender.send_privmsg(text)

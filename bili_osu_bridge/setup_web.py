@@ -73,6 +73,12 @@ def build_config_from_payload(
         osu_irc_password=irc_password,
         osu_target_username=str(data.get("targetUsername") or "").strip(),
         osu_irc_server=str(data.get("ircServer") or "irc.ppy.sh:6667").strip(),
+        irc_message_template=str(
+            data.get("ircMessageTemplate") or base.irc_message_template
+        ),
+        irc_fallback_template=str(
+            data.get("ircFallbackTemplate") or base.irc_fallback_template
+        ),
         osu_api_enabled=bool(data.get("apiEnabled")),
         osu_api_client_id=int(data.get("apiClientId") or 0),
         osu_api_client_secret=api_secret,
@@ -147,6 +153,7 @@ _SETUP_HTML = r"""<!doctype html>
     #qr-status.success { color:var(--green); } #qr-status.error,#message.error { color:var(--red); }
     .api-fields.disabled,.tosu-fields.disabled,.irc-fields.disabled { opacity:.45; pointer-events:none; }
     .actions { position:sticky; bottom:10px; display:flex; justify-content:space-between; align-items:center; gap:15px; padding:14px 16px; border:1px solid #3b4358; border-radius:15px; background:#111621f2; box-shadow:0 10px 36px #000a; backdrop-filter:blur(14px); }
+    footer { margin-top:24px; color:var(--muted); text-align:center; font-size:12px; }
     #message { min-height:22px; font-weight:750; }
     @media(max-width:700px){ header{align-items:stretch;flex-direction:column}.home-link{align-self:flex-start}.grid{grid-template-columns:1fr}.full{grid-column:auto}.actions{align-items:stretch;flex-direction:column}.actions button{width:100%} }
   </style>
@@ -188,6 +195,11 @@ _SETUP_HTML = r"""<!doctype html>
         <label>游戏内接收者用户名<input id="targetUsername"></label>
         <label>IRC 专用密码（留空会保留已有密码）<input id="ircPassword" type="password" autocomplete="new-password"></label>
         <label>最小发送间隔（秒）<input id="ircSendIntervalSeconds" type="number" min="0.5" step="0.1"></label>
+        <label class="full">谱面资料完整时的消息模板<textarea id="ircMessageTemplate" spellcheck="false"></textarea></label>
+        <label class="full">只取得基础链接时的消息模板<textarea id="ircFallbackTemplate" spellcheck="false"></textarea></label>
+        <div class="notice full"><strong>显示效果预览：</strong><code id="ircTemplatePreview"></code></div>
+        <div class="notice full">模板支持：{requester}、{platform}、{status}、{artist}、{title}、{difficulty}、{map_label}、{details}、{bpm}、{stars}、{duration}、{mods}、{mods_suffix}、{beatmap_id}、{beatmapset_id}、{beatmap_url}、{beatmap_link}、{reference}、{reference_url}、{reference_link}、{full_url}、{novideo_url}、{sayobot}。点击链接建议使用带 osu! IRC 链接语法的 {beatmap_link}、{reference_link} 与 {sayobot}。</div>
+        <button id="resetIrcTemplates" class="full" type="button">恢复默认 IRC 模板</button>
         <label class="switch full"><input id="sendStartupMessage" type="checkbox">启动后向接收者发送连接成功消息</label>
       </div>
     </section>
@@ -235,6 +247,7 @@ _SETUP_HTML = r"""<!doctype html>
 
     <div class="actions"><div id="message" class="hint">保存后会写入 config.json；程序运行中修改配置时，请重启应用以完全生效。</div><button id="save" class="primary" type="submit">保存配置</button></div>
   </form>
+  <footer><a href="https://github.com/hesitation-snow/osu-BiliRequest" target="_blank" rel="noreferrer">GitHub 开源地址</a></footer>
 </main>
 <script>
   const byId = id => document.getElementById(id);
@@ -248,10 +261,38 @@ _SETUP_HTML = r"""<!doctype html>
     byId('api-fields').classList.toggle('disabled', !byId('apiEnabled').checked);
     byId('tosu-fields').classList.toggle('disabled', !byId('tosuEnabled').checked);
   }
+  function previewIrcTemplate() {
+    const example = {
+      requester:'Miarru', platform:'bilibili', status:'Ranked',
+      artist:'Zektbach', title:'The Sealer 〜ア・ミリアとミリアの民〜',
+      difficulty:"921206025887's Extra",
+      map_label:"Zektbach - The Sealer 〜ア・ミリアとミリアの民〜 [921206025887's Extra]",
+      details:'205 BPM, 6.11*, 2:03', bpm:'205', stars:'6.11*', duration:'2:03',
+      mods:'', mods_suffix:'', beatmap_id:'1909273', beatmapset_id:'867257',
+      beatmap_url:'https://osu.ppy.sh/b/1909273',
+      beatmap_link:"[Zektbach - The Sealer 〜ア・ミリアとミリアの民〜 [921206025887's Extra]]",
+      reference:'b/1909273', reference_url:'https://osu.ppy.sh/b/1909273',
+      reference_link:'[beatmap 1909273]',
+      full_url:'https://dl.sayobot.cn/beatmaps/download/full/867257',
+      novideo_url:'https://dl.sayobot.cn/beatmaps/download/novideo/867257',
+      sayobot:'Sayobot:[Full]~[NoVideo]'
+    };
+    const template = byId('ircMessageTemplate').value;
+    byId('ircTemplatePreview').textContent = template.replace(
+      /\{([a-z_]+)\}/gi,
+      (match, name) => Object.hasOwn(example, name) ? example[name] : match
+    ).replace(/\s+/g, ' ').trim();
+  }
   byId('qqEnabled').addEventListener('change', toggleGroups);
   byId('ircEnabled').addEventListener('change', toggleGroups);
   byId('apiEnabled').addEventListener('change', toggleGroups);
   byId('tosuEnabled').addEventListener('change', toggleGroups);
+  byId('ircMessageTemplate').addEventListener('input', previewIrcTemplate);
+  byId('resetIrcTemplates').addEventListener('click', () => {
+    byId('ircMessageTemplate').value = '[{requester}] -> [{status}] {beatmap_link} ({bpm} BPM, {stars}, {duration}){mods_suffix} {sayobot}';
+    byId('ircFallbackTemplate').value = '{reference_link} <- osu-BiliRequest: {requester}{mods_suffix}';
+    previewIrcTemplate();
+  });
 
   async function loadConfig() {
     const response = await fetch('/settings/api/config', {cache:'no-store'});
@@ -267,6 +308,7 @@ _SETUP_HTML = r"""<!doctype html>
     if (data.hasApiSecret) byId('apiClientSecret').placeholder = '已保存 Secret；留空保持不变';
     if (data.hasQqAppSecret) byId('qqAppSecret').placeholder = '已保存 AppSecret；留空保持不变';
     toggleGroups();
+    previewIrcTemplate();
   }
 
   async function pollQr(key) {
@@ -323,6 +365,8 @@ _SETUP_HTML = r"""<!doctype html>
       ircEnabled:byId('ircEnabled').checked, ircServer:byId('ircServer').value,
       ircUsername:byId('ircUsername').value, targetUsername:byId('targetUsername').value,
       ircPassword:byId('ircPassword').value, ircSendIntervalSeconds:byId('ircSendIntervalSeconds').value,
+      ircMessageTemplate:byId('ircMessageTemplate').value,
+      ircFallbackTemplate:byId('ircFallbackTemplate').value,
       sendStartupMessage:byId('sendStartupMessage').checked,
       apiEnabled:byId('apiEnabled').checked, apiClientId:byId('apiClientId').value,
       apiClientSecret:byId('apiClientSecret').value,
@@ -389,6 +433,8 @@ class SetupWebServer:
                 "ircServer": config.osu_irc_server,
                 "ircUsername": config.osu_irc_username,
                 "targetUsername": config.osu_target_username,
+                "ircMessageTemplate": config.irc_message_template,
+                "ircFallbackTemplate": config.irc_fallback_template,
                 "ircSendIntervalSeconds": config.irc_send_interval_seconds,
                 "sendStartupMessage": config.send_startup_message,
                 "apiEnabled": config.osu_api_enabled,
