@@ -4,6 +4,7 @@ import unittest
 from pathlib import Path
 
 from bili_osu_bridge.config import Config
+from bili_osu_bridge.parser import DEFAULT_IRC_MESSAGE_TEMPLATE
 from bili_osu_bridge.setup_web import SetupWebServer, build_config_from_payload
 
 
@@ -89,6 +90,10 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(rendered["web"]["overlayPlayedHoldSeconds"], 60)
         self.assertNotIn("_comment", rendered["osuIrc"])
         self.assertEqual(rendered["osuIrc"]["server"], "irc.ppy.sh:6667")
+        self.assertEqual(
+            rendered["osuIrc"]["messageTemplate"],
+            DEFAULT_IRC_MESSAGE_TEMPLATE,
+        )
 
     def test_irc_can_be_disabled_without_credentials(self):
         config = build_config_from_payload(
@@ -125,6 +130,12 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(config.osu_irc_host, "irc.example.test")
         self.assertEqual(config.osu_irc_port, 7777)
 
+    def test_rejects_unknown_irc_template_placeholder(self):
+        with self.assertRaisesRegex(ValueError, "unknown_field"):
+            build_config_from_payload(
+                setup_payload(ircMessageTemplate="{requester} {unknown_field}")
+            )
+
     def test_web_payload_builds_complete_config(self):
         config = build_config_from_payload(
             setup_payload(
@@ -159,6 +170,15 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(config.qq_owner_openids, ("owner-a", "owner-b"))
         self.assertEqual(config.blacklisted_user_ids, ("123", "456"))
         self.assertEqual(config.blacklisted_beatmap_ids, ("666", "233"))
+
+        customized = build_config_from_payload(
+            setup_payload(
+                ircMessageTemplate="{requester}: {beatmap_link}",
+                ircFallbackTemplate="{requester}: {reference_url}",
+            )
+        )
+        self.assertEqual(customized.irc_message_template, "{requester}: {beatmap_link}")
+        self.assertEqual(customized.irc_fallback_template, "{requester}: {reference_url}")
 
     def test_migrates_previous_default_hold_to_300(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -248,6 +268,11 @@ class SetupWebTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("osu!lazer 无法在游戏内收到同一账号通过 IRC 发给自己的消息", html)
         self.assertIn('id="ircEnabled"', html)
         self.assertIn('id="ircServer"', html)
+        self.assertIn('id="ircMessageTemplate"', html)
+        self.assertIn('id="ircFallbackTemplate"', html)
+        self.assertIn('id="ircTemplatePreview"', html)
+        self.assertIn('id="resetIrcTemplates"', html)
+        self.assertIn("{beatmap_link}", html)
         self.assertIn("<h2>osu! API</h2>", html)
         self.assertIn("tosu 状态同步", html)
         self.assertIn("useUnicodeIrc", html)
@@ -260,6 +285,7 @@ class SetupWebTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn('id="save"', html)
         self.assertIn("保存配置", html)
         self.assertIn("扫码登录", html)
+        self.assertIn("GitHub 开源地址", html)
         self.assertTrue(server._public_config()["values"]["apiEnabled"])
 
 

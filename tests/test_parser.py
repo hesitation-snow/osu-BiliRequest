@@ -145,6 +145,43 @@ class ParserTests(unittest.TestCase):
         self.assertIn("(247.5 BPM, 7.12*, 3:33) +HDDT", api_text)
         self.assertTrue(api_text.endswith("2533001 NoVideo]"))
 
+    def test_formats_custom_irc_template(self):
+        info = BeatmapInfo(
+            beatmap_id=5600294,
+            beatmapset_id=2533001,
+            status="Ranked",
+            artist="Artist",
+            title="Title",
+            version="Extra",
+            bpm=200,
+            stars=6.11,
+            total_length=123,
+        )
+        text = format_irc_request(
+            5600294,
+            "Miarru",
+            info,
+            message_template=(
+                "{requester}: {artist} / {title} / {difficulty} / "
+                "{duration} / {beatmap_url} / {full_url}"
+            ),
+        )
+
+        self.assertEqual(
+            text,
+            "Miarru: Artist / Title / Extra / 2:03 / "
+            "https://osu.ppy.sh/b/5600294 / "
+            "https://dl.sayobot.cn/beatmaps/download/full/2533001",
+        )
+
+    def test_formats_custom_fallback_template(self):
+        text = format_irc_request(
+            123456,
+            "viewer",
+            fallback_template="{requester} -> {reference_url}{mods_suffix}",
+        )
+        self.assertEqual(text, "viewer -> https://osu.ppy.sh/b/123456")
+
 
 if __name__ == "__main__":
     unittest.main()
