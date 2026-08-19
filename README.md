@@ -74,7 +74,6 @@ b/5600294 +HDDT
 - 设置页面：`http://127.0.0.1:24051/settings`
 - OBS Overlay：`http://127.0.0.1:24051/overlay`
 - Overlay API 文档：`http://127.0.0.1:24051/api`
-- Overlay 推荐分辨率：`760 × 100`
 
 在 OBS 中添加“浏览器”来源并填写 Overlay 地址即可，无需自定义 CSS。无人点歌时 Overlay 保持透明，切换点歌时会滑入或滑出。
 
